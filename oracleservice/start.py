@@ -15,17 +15,18 @@ def create_interface(url, ss58_format, type_registry_preset):
     return substrate
 
 
-def create_tx(era_id, staking_parameters):
+def create_tx(era_id, staking_parameters, parachain_balance=123):
     nonce = w3.eth.getTransactionCount(account.address)
-    print(staking_parameters)
 
     tx = w3.eth.contract(
             address=contract_address, 
             abi=abi
          ).functions.reportRelay(
             era_id, 
-            # TODO modify staking_parameters - ?
-            {'staking': [123, staking_parameters]},
+            {'staking': [
+                parachain_balance, 
+                staking_parameters,
+            ]},
          ).buildTransaction({'gas': gas, 'gasPrice': gas_price, 'nonce': nonce})
 
     return tx
@@ -36,6 +37,7 @@ def sign_and_send_to_para(tx):
     tx_hash = w3.eth.sendRawTransaction(tx_signed.rawTransaction)
     tx_receipt = w3.eth.waitForTransactionReceipt(tx_hash)
 
+    # TODO remove later
     print(f"tx_hash: {tx_hash}")
     print(f"tx_receipt: {tx_receipt}")
 
@@ -80,6 +82,7 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
     if not block_hash:
         block_hash = app.get_chain_head()
 
+    # TODO remove later
     print(f"Block hash: {block_hash}")
 
     staking_ledger_result = app.query_map(
@@ -136,6 +139,7 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
 
 
 def subscription_handler(era, update_nr, subscription_id):
+    # TODO remove later
     print(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
 
     # waiting for the end of the zero era in the queue
@@ -145,11 +149,9 @@ def subscription_handler(era, update_nr, subscription_id):
     staking_parameters = read_staking_parameters(substrate)
     # TODO remove later
     print(staking_parameters)
-    print("________________________________________________________________________________")
 
-    # uncomment when it's time to test
     tx = create_tx(era.value['index'], staking_parameters)
-    # sign_and_send_to_para(tx)
+    sign_and_send_to_para(tx)
 
 
 def start_era_monitoring(app):
@@ -180,6 +182,7 @@ if __name__ == "__main__":
     contract_address = args.contract_address
     gas = args.gas
     gas_price = args.gas_price
+    # TODO read abi from file
     abi_path = args.abi
 
     w3 = Web3(Web3.WebsocketProvider(ws_url_para))
