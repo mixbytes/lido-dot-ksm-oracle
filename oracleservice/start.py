@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
+from _config import key 
 from substrateinterface import SubstrateInterface
-from substrateinterface.utils.ss58 import ss58_decode
 from web3 import Web3
 
 def create_interface(url, ss58_format, type_registry_preset):
@@ -15,7 +15,7 @@ def create_interface(url, ss58_format, type_registry_preset):
     return substrate
 
 
-def create_tx(era_id, staking_parameters, parachain_balance=123):
+def create_tx(era_id, parachain_balance, staking_parameters):
     nonce = w3.eth.getTransactionCount(account.address)
 
     tx = w3.eth.contract(
@@ -40,6 +40,35 @@ def sign_and_send_to_para(tx):
     # TODO remove later
     print(f"tx_hash: {tx_hash}")
     print(f"tx_receipt: {tx_receipt}")
+
+
+def get_parachain_balance(app):
+    para_id = app.query(
+        module='Paras',
+        storage_function='Parachains',
+    ).value[0]
+
+    prefix = b'para'
+    para_addr = bytearray(prefix)
+    para_addr.append(para_id & 0xFF)
+    para_id = para_id>>8
+    para_addr.append(para_id & 0xFF)
+    para_id = para_id>>8
+    para_addr.append(para_id & 0xFF)
+    
+    para_addr = app.ss58_encode(para_addr.ljust(32, b'\0')) 
+
+    result = app.query(
+        module='System',
+        storage_function='Account',
+        params=[para_addr]
+    )
+
+    if result is None:
+        print(f"{para} is gone")
+        return 0
+
+    return result.value['data']['free'] 
 
 
 def get_stash_statuses(controllers_, validators_, nominators_):
@@ -125,8 +154,8 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
             unlocking_values.append({'balance': elem['value'], 'era': elem['era']})
 
         staking_parameters.append({
-            'stash': '0x' + ss58_decode(controller_info.value['stash']),
-            'controller': '0x' + ss58_decode(controller.value),
+            'stash': '0x' + app.ss58_decode(controller_info.value['stash']),
+            'controller': '0x' + app.ss58_decode(controller.value),
             'stake_status': stash_statuses[controller_info.value['stash']],
             'active_balance': controller_info.value['active'],
             'total_balance': controller_info.value['total'],
@@ -146,11 +175,14 @@ def subscription_handler(era, update_nr, subscription_id):
     if update_nr == 0:
         return
 
+    parachain_balance = get_parachain_balance(substrate)
     staking_parameters = read_staking_parameters(substrate)
-    # TODO remove later
-    print(staking_parameters)
 
-    tx = create_tx(era.value['index'], staking_parameters)
+    # TODO remove later
+    print(f'parachain_balance: {parachain_balance}')
+    print(f'staking parameters: {staking_parameters}')
+
+    tx = create_tx(era.value['index'], parachain_balance, staking_parameters)
     sign_and_send_to_para(tx)
 
 
@@ -169,7 +201,7 @@ if __name__ == "__main__":
     parser.add_argument('--ws_url_para', help='websocket url', nargs='*', default=['ws://localhost:10055/'])
     parser.add_argument('--ss58_format', help='ss58 format', nargs=1, default=2)
     parser.add_argument('--type_registry_preset', help='type registry preset', nargs=1, default='kusama')
-    parser.add_argument('--contract_address', help='parachain smart contract address', nargs='*', default='0x')
+    parser.add_argument('--contract_address', help='parachain smart contract address', nargs=1, default='')
     parser.add_argument('--gas', help='gas', nargs=1, default=10000000)
     parser.add_argument('--gas_price', help='gas price', nargs=1, default=1000000000)
     parser.add_argument('--abi', help='path to abi', nargs=1, default='')
@@ -188,9 +220,7 @@ if __name__ == "__main__":
     w3 = Web3(Web3.WebsocketProvider(ws_url_para))
     substrate = create_interface(ws_url_relay, ss58_format, type_registry_preset)
 
-    # TODO remove later for security reasons
-    account = w3.eth.account.from_key('0x5fb92d6e98884f76de468fa3f6278f8807c48bebc13595d45af5bdc4da702133')
-    private_key = account.privateKey
+    account = w3.eth.account.from_key(key)
     
     start_era_monitoring(substrate)
 
