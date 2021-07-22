@@ -1,2 +1,3 @@
 oracleservice/_config.py
 oracleservice/__pycache__
+*.swp
