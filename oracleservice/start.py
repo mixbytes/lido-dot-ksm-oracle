@@ -3,6 +3,18 @@ from _config import key
 from substrateinterface import SubstrateInterface
 from web3 import Web3
 
+import os
+import re
+
+
+def get_abi(abi_path):
+    with open(abi_path) as f:
+        abi = f.readlines()
+        abi = re.sub(r"[\t\n]", '', (''.join(abi)))
+
+    return abi
+
+
 def create_interface(url, ss58_format, type_registry_preset):
     substrate = SubstrateInterface(
             url=url, 
@@ -204,7 +216,7 @@ if __name__ == "__main__":
     parser.add_argument('--contract_address', help='parachain smart contract address', nargs=1, default='')
     parser.add_argument('--gas', help='gas', nargs=1, default=10000000)
     parser.add_argument('--gas_price', help='gas price', nargs=1, default=1000000000)
-    parser.add_argument('--abi', help='path to abi', nargs=1, default='')
+    parser.add_argument('--abi', help='path to abi', type=str, default='oracleservice/abi.json')
 
     args = parser.parse_args()
     ws_url_relay = args.ws_url_relay[0]
@@ -214,8 +226,9 @@ if __name__ == "__main__":
     contract_address = args.contract_address
     gas = args.gas
     gas_price = args.gas_price
-    # TODO read abi from file
+
     abi_path = args.abi
+    abi = get_abi(abi_path)
 
     w3 = Web3(Web3.WebsocketProvider(ws_url_para))
     substrate = create_interface(ws_url_relay, ss58_format, type_registry_preset)
