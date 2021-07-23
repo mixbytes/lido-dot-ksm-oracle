@@ -8,6 +8,9 @@ import re
 import sys
 
 
+ss58_formats = (0, 2, 42)
+
+
 def get_abi(abi_path):
     with open(abi_path) as f:
         abi = f.readlines()
@@ -16,7 +19,7 @@ def get_abi(abi_path):
     return abi
 
 
-def check_and_ss58_decode(app, accounts):
+def decode_stash_addresses(app, accounts):
     decoded_accounts = []
 
     for acc in accounts:
@@ -34,7 +37,16 @@ def check_and_ss58_decode(app, accounts):
 def create_interface(url, ss58_format, type_registry_preset):
     substrate = None
 
+    if ss58_format not in ss58_formats:
+        print(f"Invalid SS58 format")
+
+        return substrate
+
     for u in url:
+        if not u.startswith('ws'):
+            print(f"Unsupported ws provider: {u}")
+            continue
+
         try:
             substrate = SubstrateInterface(
                 url=u, 
@@ -44,8 +56,8 @@ def create_interface(url, ss58_format, type_registry_preset):
 
             substrate.update_type_registry_presets()
 
-        except requests.exceptions.InvalidSchema:
-            print(f"No connection adapters were found for {url}")
+        except:
+            print(f"Failed to connect to {u} with type registry preset '{type_registry_preset}'")
         else:
             break
 
@@ -53,9 +65,21 @@ def create_interface(url, ss58_format, type_registry_preset):
 
 
 def create_provider(url):
-    w3 = Web3(Web3.WebsocketProvider(url[0]))
+    provider = None
+
+    for u in url:
+        if not u.startswith('ws'):
+            print(f"Unsupported ws provider: {u}")
+            continue
+
+        try:
+            provider = Web3.WebsocketProvider(u)
+        except:
+            print(f"Failed to connect to {u}")
+        else:
+            break
     
-    return w3
+    return provider
 
 
 def create_tx(era_id, parachain_balance, staking_parameters):
@@ -291,12 +315,15 @@ if __name__ == "__main__":
     abi_path = args.abi
     abi = get_abi(abi_path)
 
-    w3 = create_provider(ws_url_para)
+    w3 = Web3(create_provider(ws_url_para))
+    if not w3.isConnected():
+        sys.exit('Failed to create web3 provider')
+
     substrate = create_interface(ws_url_relay, ss58_format, type_registry_preset)
     if substrate is None:
-        sys.exit('Failed to connect')
+        sys.exit('Failed to create substrate-interface')
 
-    stash_accounts = check_and_ss58_decode(substrate, args.stash)
+    stash_accounts = decode_stash_addresses(substrate, args.stash)
 
     account = w3.eth.account.from_key(key)
     
