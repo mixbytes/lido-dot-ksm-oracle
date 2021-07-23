@@ -2,6 +2,7 @@
 from substrateinterface import SubstrateInterface
 from web3 import Web3
 
+import json
 import os
 import re
 import sys
@@ -12,9 +13,10 @@ ss58_formats = (0, 2, 42)
 
 
 def get_abi(abi_path):
-    with open(abi_path) as f:
-        abi = f.readlines()
-        abi = re.sub(r"[\t\n]", '', (''.join(abi)))
+    with open(abi_path, 'r') as f:
+        a = f.read()
+        
+    abi = json.loads(a)
 
     return abi
 
@@ -90,17 +92,14 @@ def create_tx(era_id, parachain_balance, staking_parameters):
             abi=abi
          ).functions.reportRelay(
             era_id, 
-            {'staking': [
-                parachain_balance, 
-                staking_parameters,
-            ]},
-         ).buildTransaction({'gas': gas, 'gasPrice': gas_price, 'nonce': nonce})
+            {'parachain_balance': parachain_balance, 'stake_ledger': staking_parameters},
+         ).buildTransaction({'gas': gas, 'gasPrice': gas_price, 'nonce': nonce, 'to': contract_address})
 
     return tx
 
 
 def sign_and_send_to_para(tx):
-    tx_signed = w3.eth.account.signTransaction(tx, private_key=private_key)
+    tx_signed = w3.eth.account.signTransaction(tx, private_key=oracle_private_key)
     tx_hash = w3.eth.sendRawTransaction(tx_signed.rawTransaction)
     tx_receipt = w3.eth.waitForTransactionReceipt(tx_hash)
 
