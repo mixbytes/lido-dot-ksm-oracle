@@ -5,6 +5,7 @@ from web3 import Web3
 
 import os
 import re
+import sys
 
 
 def get_abi(abi_path):
@@ -15,16 +16,46 @@ def get_abi(abi_path):
     return abi
 
 
-def create_interface(url, ss58_format, type_registry_preset):
-    substrate = SubstrateInterface(
-            url=url, 
-            ss58_format=ss58_format, 
-            type_registry_preset=type_registry_preset,
-    )
+def check_and_ss58_decode(app, accounts):
+    decoded_accounts = []
 
-    substrate.update_type_registry_presets()
+    for acc in accounts:
+        decoded_acc = ''
+
+        if acc[0] != '0' or acc[1] != 'x':
+            decoded_acc += '0x' 
+    
+        decoded_acc += app.ss58_decode(acc)
+        decoded_accounts.append(decoded_acc)
+
+    return decoded_accounts
+
+
+def create_interface(url, ss58_format, type_registry_preset):
+    substrate = None
+
+    for u in url:
+        try:
+            substrate = SubstrateInterface(
+                url=u, 
+                ss58_format=ss58_format, 
+                type_registry_preset=type_registry_preset,
+            )
+
+            substrate.update_type_registry_presets()
+
+        except requests.exceptions.InvalidSchema:
+            print(f"No connection adapters were found for {url}")
+        else:
+            break
 
     return substrate
+
+
+def create_provider(url):
+    w3 = Web3(Web3.WebsocketProvider(url[0]))
+    
+    return w3
 
 
 def create_tx(era_id, parachain_balance, staking_parameters):
@@ -95,7 +126,7 @@ def get_stash_statuses(controllers_, validators_, nominators_):
     for validator in validators_.value:
         validators.add(validator)
 
-    for _, controller_info in controllers_:
+    for controller_info in controllers_.values():
         stash_account = controller_info.value['stash']
         if stash_account in nominators:
             statuses[stash_account] = 1
@@ -110,14 +141,45 @@ def get_stash_statuses(controllers_, validators_, nominators_):
     return statuses
 
 
-def get_stash_balances(account_info):
+def get_stash_balances(app, stash_accounts):
     balances = {}
 
-    for stash, info in account_info:
-        balances[stash.value] = info.value['data']['free']
+    for stash in stash_accounts:
+        result = app.query(
+            module='System',
+            storage_function='Account',
+            params=[stash]
+        )
+
+        balances[stash] = result.value['data']['free']
 
     return balances
 
+
+def get_ledger_data(app, block_hash, stash_accounts):
+    ledger_data = {}
+    
+    for stash in stash_accounts:
+        controller = app.query(
+            module='Staking',
+            storage_function='Bonded',
+            params=[stash],
+            block_hash=block_hash,
+        )
+
+        if controller.value is None:
+            continue
+
+        staking_ledger = app.query(
+            module='Staking',
+            storage_function='Ledger',
+            params=[controller.value],
+            block_hash=block_hash,
+        )
+
+        ledger_data[controller.value] = staking_ledger
+
+    return ledger_data
 
 def read_staking_parameters(app, block_hash=None, max_results=199):
     if not block_hash:
@@ -126,12 +188,7 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
     # TODO remove later
     print(f"Block hash: {block_hash}")
 
-    staking_ledger_result = app.query_map(
-        module='Staking',
-        storage_function='Ledger',
-        block_hash=block_hash,
-        max_results=max_results,
-    )
+    staking_ledger_result = get_ledger_data(app, block_hash, stash_accounts) 
 
     session_validators_result = app.query(
         module='Session',
@@ -145,12 +202,7 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
         block_hash=block_hash,
     )
 
-    system_account_result = app.query_map(
-        module='System',
-        storage_function='Account',
-    )
-
-    stash_balances = get_stash_balances(system_account_result)
+    stash_balances = get_stash_balances(app, stash_accounts)
 
     stash_statuses = get_stash_statuses(
         staking_ledger_result,
@@ -160,22 +212,30 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
 
     staking_parameters = []
 
-    for controller, controller_info in staking_ledger_result:
+    for controller, controller_info in staking_ledger_result.items():
+        # filter out validators and leave only nominators
+        if stash_statuses[controller_info.value['stash']] != 1:
+            continue
+
         unlocking_values = []
         for elem in controller_info.value['unlocking']:
             unlocking_values.append({'balance': elem['value'], 'era': elem['era']})
+        
+        stash_addr = '0x' + app.ss58_decode(controller_info.value['stash'])
+        controller_addr = '0x' + app.ss58_decode(controller)
 
         staking_parameters.append({
-            'stash': '0x' + app.ss58_decode(controller_info.value['stash']),
-            'controller': '0x' + app.ss58_decode(controller.value),
+            'stash': stash_addr,
+            'controller': controller_addr,
             'stake_status': stash_statuses[controller_info.value['stash']],
             'active_balance': controller_info.value['active'],
             'total_balance': controller_info.value['total'],
             'unlocking': unlocking_values,
             'claimed_rewards': controller_info.value['claimedRewards'],
-            'stash_balance': stash_balances[controller_info.value['stash']],
+            'stash_balance': stash_balances[stash_addr],
         })
 
+    staking_parameters.sort(key=lambda e: e['stash'])
     return staking_parameters
 
 
@@ -211,16 +271,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='oracle-service command line.')
     parser.add_argument('--ws_url_relay', help='websocket url', nargs='*', default=['ws://localhost:9951/'])
     parser.add_argument('--ws_url_para', help='websocket url', nargs='*', default=['ws://localhost:10055/'])
-    parser.add_argument('--ss58_format', help='ss58 format', nargs=1, default=2)
-    parser.add_argument('--type_registry_preset', help='type registry preset', nargs=1, default='kusama')
-    parser.add_argument('--contract_address', help='parachain smart contract address', nargs=1, default='')
-    parser.add_argument('--gas', help='gas', nargs=1, default=10000000)
-    parser.add_argument('--gas_price', help='gas price', nargs=1, default=1000000000)
+    parser.add_argument('--ss58_format', help='ss58 format', type=int, default=2)
+    parser.add_argument('--type_registry_preset', help='type registry preset', type=str, default='kusama')
+    parser.add_argument('--contract_address', help='parachain smart contract address')
+    parser.add_argument('--gas', help='gas', type=int, default=10000000)
+    parser.add_argument('--gas_price', help='gas price', type=int, default=1000000000)
     parser.add_argument('--abi', help='path to abi', type=str, default='oracleservice/abi.json')
+    parser.add_argument('--stash', help='stash account list', nargs='+')
 
     args = parser.parse_args()
-    ws_url_relay = args.ws_url_relay[0]
-    ws_url_para = args.ws_url_para[0]
+    ws_url_relay = args.ws_url_relay
+    ws_url_para = args.ws_url_para
     ss58_format = args.ss58_format
     type_registry_preset = args.type_registry_preset
     contract_address = args.contract_address
@@ -230,8 +291,12 @@ if __name__ == "__main__":
     abi_path = args.abi
     abi = get_abi(abi_path)
 
-    w3 = Web3(Web3.WebsocketProvider(ws_url_para))
+    w3 = create_provider(ws_url_para)
     substrate = create_interface(ws_url_relay, ss58_format, type_registry_preset)
+    if substrate is None:
+        sys.exit('Failed to connect')
+
+    stash_accounts = check_and_ss58_decode(substrate, args.stash)
 
     account = w3.eth.account.from_key(key)
     
