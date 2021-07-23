@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from _config import key 
 from substrateinterface import SubstrateInterface
 from web3 import Web3
 
@@ -8,6 +7,7 @@ import re
 import sys
 
 
+DEFAULT_GAS_LIMIT = 10000000
 ss58_formats = (0, 2, 42)
 
 
@@ -297,8 +297,6 @@ if __name__ == "__main__":
     parser.add_argument('--ws_url_para', help='websocket url', nargs='*', default=['ws://localhost:10055/'])
     parser.add_argument('--ss58_format', help='ss58 format', type=int, default=2)
     parser.add_argument('--type_registry_preset', help='type registry preset', type=str, default='kusama')
-    parser.add_argument('--contract_address', help='parachain smart contract address')
-    parser.add_argument('--gas', help='gas', type=int, default=10000000)
     parser.add_argument('--gas_price', help='gas price', type=int, default=1000000000)
     parser.add_argument('--abi', help='path to abi', type=str, default='oracleservice/abi.json')
     parser.add_argument('--stash', help='stash account list', nargs='+')
@@ -308,12 +306,13 @@ if __name__ == "__main__":
     ws_url_para = args.ws_url_para
     ss58_format = args.ss58_format
     type_registry_preset = args.type_registry_preset
-    contract_address = args.contract_address
-    gas = args.gas
     gas_price = args.gas_price
 
     abi_path = args.abi
     abi = get_abi(abi_path)
+
+    contract_address = os.getenv('CONTRACT_ADDRESS')
+    gas = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
 
     w3 = Web3(create_provider(ws_url_para))
     if not w3.isConnected():
@@ -325,7 +324,10 @@ if __name__ == "__main__":
 
     stash_accounts = decode_stash_addresses(substrate, args.stash)
 
-    account = w3.eth.account.from_key(key)
+    oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
+    if oracle_private_key is None:
+        sys.exit('Failed to parse oracle private key')
+    account = w3.eth.account.from_key(oracle_private_key)
     
     start_era_monitoring(substrate)
 
