@@ -10,6 +10,7 @@ import sys
 
 DEFAULT_GAS_LIMIT = 10000000
 ss58_formats = (0, 2, 42)
+previous_era = 0
 
 
 def get_abi(abi_path):
@@ -284,6 +285,12 @@ def find_start_block(app, era_id):
 
 
 def subscription_handler(era, update_nr, subscription_id):
+    global previous_era
+    if era.value['index'] == previous_era:
+        return
+    else:
+        previous_era = era.value['index']
+
     print(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
     block_hash = find_start_block(substrate, era.value['index'])
     print(f"Block hash: {block_hash}")
