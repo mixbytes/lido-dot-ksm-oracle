@@ -25,13 +25,11 @@ def decode_stash_addresses(app, accounts):
     decoded_accounts = []
 
     for acc in accounts:
-        decoded_acc = ''
-
-        if acc[0] != '0' or acc[1] != 'x':
-            decoded_acc += '0x' 
+        if not acc.startswith('0x'):
+            decoded_accounts.append('0x' + app.ss58_decode(acc))
+        else:
+            decoded_accounts.append(app.ss58_decode(acc))
     
-        decoded_acc += app.ss58_decode(acc)
-        decoded_accounts.append(decoded_acc)
 
     return decoded_accounts
 
@@ -93,7 +91,7 @@ def create_tx(era_id, parachain_balance, staking_parameters):
          ).functions.reportRelay(
             era_id, 
             {'parachain_balance': parachain_balance, 'stake_ledger': staking_parameters},
-         ).buildTransaction({'gas': gas, 'gasPrice': gas_price, 'nonce': nonce, 'to': contract_address})
+         ).buildTransaction({'gas': gas, 'gasPrice': gas_price, 'nonce': nonce})
 
     return tx
 
@@ -103,15 +101,18 @@ def sign_and_send_to_para(tx):
     tx_hash = w3.eth.sendRawTransaction(tx_signed.rawTransaction)
     tx_receipt = w3.eth.waitForTransactionReceipt(tx_hash)
 
-    # TODO remove later
     print(f"tx_hash: {tx_hash}")
     print(f"tx_receipt: {tx_receipt}")
 
 
-def get_parachain_balance(app):
+def get_parachain_balance(app, block_hash=None):
+    if not block_hash:
+        block_hash = app.get_chain_head()
+
     para_id = app.query(
         module='Paras',
         storage_function='Parachains',
+        block_hash=block_hash
     ).value[0]
 
     prefix = b'para'
@@ -208,9 +209,6 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
     if not block_hash:
         block_hash = app.get_chain_head()
 
-    # TODO remove later
-    print(f"Block hash: {block_hash}")
-
     staking_ledger_result = get_ledger_data(app, block_hash, stash_accounts) 
 
     session_validators_result = app.query(
@@ -262,20 +260,42 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
     return staking_parameters
 
 
-def subscription_handler(era, update_nr, subscription_id):
-    # TODO remove later
-    print(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
+def find_start_block(app, era_id):
+    current_block_hash = substrate.get_chain_head()
+    current_block_info = substrate.get_block_header(current_block_hash)
+    previous_block_hash = current_block_info['header']['parentHash']
+    previous_block_era = app.query(
+        module='Staking',
+        storage_function='ActiveEra',
+        block_hash=previous_block_hash,
+    )
 
-    # waiting for the end of the zero era in the queue
-    if update_nr == 0:
+    while previous_block_era.value['index'] >= era_id:
+        current_block_hash = previous_block_hash
+        current_block_info = substrate.get_block_header(current_block_hash)
+        previous_block_hash = current_block_info['header']['parentHash']
+        previous_block_era = app.query(
+            module='Staking',
+            storage_function='ActiveEra',
+            block_hash=previous_block_hash,
+        )
+        
+    return current_block_hash
+
+
+def subscription_handler(era, update_nr, subscription_id):
+    print(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
+    block_hash = find_start_block(substrate, era.value['index'])
+    print(f"Block hash: {block_hash}")
+
+    parachain_balance = get_parachain_balance(substrate, block_hash)
+    staking_parameters = read_staking_parameters(substrate, block_hash)
+    if not staking_parameters:
+        print('No staking parameters found')
         return
 
-    parachain_balance = get_parachain_balance(substrate)
-    staking_parameters = read_staking_parameters(substrate)
-
-    # TODO remove later
-    print(f'parachain_balance: {parachain_balance}')
-    print(f'staking parameters: {staking_parameters}')
+    print(f"parachain_balance: {parachain_balance}")
+    print(f"staking parameters: {staking_parameters}")
 
     tx = create_tx(era.value['index'], parachain_balance, staking_parameters)
     sign_and_send_to_para(tx)
@@ -285,7 +305,7 @@ def start_era_monitoring(app):
     app.query(
         module='Staking',
         storage_function='ActiveEra',
-        subscription_handler=subscription_handler
+        subscription_handler=subscription_handler,
     )
 
 
@@ -310,7 +330,9 @@ if __name__ == "__main__":
     abi_path = args.abi
     abi = get_abi(abi_path)
 
-    contract_address = os.getenv('CONTRACT_ADDRESS')
+    contract_address = os.getenv('CONTRACT_ADDRESS', None)
+    if contract_address is None:
+        sys.exit('No contract address provided')
     gas = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
 
     w3 = Web3(create_provider(ws_url_para))
