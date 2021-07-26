@@ -1,0 +1,4 @@
+oracleservice/__pycache__
+oracleservice/_config.py
+oracleservice/abi.json
+*.swp
