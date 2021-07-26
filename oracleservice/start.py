@@ -1,36 +1,40 @@
 #!/usr/bin/env python3
+from log import init_log
 from substrateinterface import SubstrateInterface
+from substrateinterface.utils.ss58 import ss58_decode
 from web3 import Web3
 
 import json
+import logging
 import os
 import re
 import sys
 
 
 DEFAULT_GAS_LIMIT = 10000000
-ss58_formats = (0, 2, 42)
+SS58_FORMATS = (0, 2, 42)
 previous_era = 0
+
+init_log(stdout_level=os.getenv('LOG_LEVEL_STDOUT', 'INFO'))
+logger = logging.getLogger()
 
 
 def get_abi(abi_path):
     with open(abi_path, 'r') as f:
-        a = f.read()
-        
-    abi = json.loads(a)
-
-    return abi
+        return json.load(f)
 
 
-def decode_stash_addresses(app, accounts):
+def decode_stash_addresses(accounts):
+    if not accounts:
+        return None
+
     decoded_accounts = []
 
     for acc in accounts:
         if not acc.startswith('0x'):
-            decoded_accounts.append('0x' + app.ss58_decode(acc))
+            decoded_accounts.append('0x' + ss58_decode(acc))
         else:
-            decoded_accounts.append(app.ss58_decode(acc))
-    
+            decoded_accounts.append(ss58_decode(acc))
 
     return decoded_accounts
 
@@ -38,14 +42,14 @@ def decode_stash_addresses(app, accounts):
 def create_interface(url, ss58_format, type_registry_preset):
     substrate = None
 
-    if ss58_format not in ss58_formats:
-        print(f"Invalid SS58 format")
+    if ss58_format not in SS58_FORMATS:
+        logging.error(f"Invalid SS58 format")
 
         return substrate
 
     for u in url:
         if not u.startswith('ws'):
-            print(f"Unsupported ws provider: {u}")
+            logging.warning(f"Unsupported ws provider: {u}")
             continue
 
         try:
@@ -58,7 +62,7 @@ def create_interface(url, ss58_format, type_registry_preset):
             substrate.update_type_registry_presets()
 
         except:
-            print(f"Failed to connect to {u} with type registry preset '{type_registry_preset}'")
+            logging.warning(f"Failed to connect to {u} with type registry preset '{type_registry_preset}'")
         else:
             break
 
@@ -70,13 +74,13 @@ def create_provider(url):
 
     for u in url:
         if not u.startswith('ws'):
-            print(f"Unsupported ws provider: {u}")
+            logging.warning(f"Unsupported ws provider: {u}")
             continue
 
         try:
             provider = Web3.WebsocketProvider(u)
         except:
-            print(f"Failed to connect to {u}")
+            logging.warning(f"Failed to connect to {u}")
         else:
             break
     
@@ -92,7 +96,7 @@ def create_tx(era_id, parachain_balance, staking_parameters):
          ).functions.reportRelay(
             era_id, 
             {'parachain_balance': parachain_balance, 'stake_ledger': staking_parameters},
-         ).buildTransaction({'gas': gas, 'gasPrice': gas_price, 'nonce': nonce})
+         ).buildTransaction({'gas': gas, 'nonce': nonce})
 
     return tx
 
@@ -102,19 +106,15 @@ def sign_and_send_to_para(tx):
     tx_hash = w3.eth.sendRawTransaction(tx_signed.rawTransaction)
     tx_receipt = w3.eth.waitForTransactionReceipt(tx_hash)
 
-    print(f"tx_hash: {tx_hash}")
-    print(f"tx_receipt: {tx_receipt}")
+    logger.info(f"tx_hash: {tx_hash.hex()}")
+    logger.info(f"tx_receipt: {tx_receipt}")
 
 
 def get_parachain_balance(app, block_hash=None):
+    global para_id 
+
     if not block_hash:
         block_hash = app.get_chain_head()
-
-    para_id = app.query(
-        module='Paras',
-        storage_function='Parachains',
-        block_hash=block_hash
-    ).value[0]
 
     prefix = b'para'
     para_addr = bytearray(prefix)
@@ -133,7 +133,7 @@ def get_parachain_balance(app, block_hash=None):
     )
 
     if result is None:
-        print(f"{para} is gone")
+        logging.warning(f"{para} is gone")
         return 0
 
     return result.value['data']['free'] 
@@ -243,8 +243,8 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
         for elem in controller_info.value['unlocking']:
             unlocking_values.append({'balance': elem['value'], 'era': elem['era']})
         
-        stash_addr = '0x' + app.ss58_decode(controller_info.value['stash'])
-        controller_addr = '0x' + app.ss58_decode(controller)
+        stash_addr = '0x' + ss58_decode(controller_info.value['stash'])
+        controller_addr = '0x' + ss58_decode(controller)
 
         staking_parameters.append({
             'stash': stash_addr,
@@ -291,18 +291,18 @@ def subscription_handler(era, update_nr, subscription_id):
     else:
         previous_era = era.value['index']
 
-    print(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
+    logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
     block_hash = find_start_block(substrate, era.value['index'])
-    print(f"Block hash: {block_hash}")
+    logger.info(f"Block hash: {block_hash}")
 
     parachain_balance = get_parachain_balance(substrate, block_hash)
     staking_parameters = read_staking_parameters(substrate, block_hash)
     if not staking_parameters:
-        print('No staking parameters found')
+        logging.warning('No staking parameters found')
         return
 
-    print(f"parachain_balance: {parachain_balance}")
-    print(f"staking parameters: {staking_parameters}")
+    logger.info(f"parachain_balance: {parachain_balance}")
+    logger.info(f"staking parameters: {staking_parameters}")
 
     tx = create_tx(era.value['index'], parachain_balance, staking_parameters)
     sign_and_send_to_para(tx)
@@ -317,29 +317,19 @@ def start_era_monitoring(app):
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description='oracle-service command line.')
-    parser.add_argument('--ws_url_relay', help='websocket url', nargs='*', default=['ws://localhost:9951/'])
-    parser.add_argument('--ws_url_para', help='websocket url', nargs='*', default=['ws://localhost:10055/'])
-    parser.add_argument('--ss58_format', help='ss58 format', type=int, default=2)
-    parser.add_argument('--type_registry_preset', help='type registry preset', type=str, default='kusama')
-    parser.add_argument('--gas_price', help='gas price', type=int, default=1000000000)
-    parser.add_argument('--abi', help='path to abi', type=str, default='oracleservice/abi.json')
-    parser.add_argument('--stash', help='stash account list', nargs='+')
-
-    args = parser.parse_args()
-    ws_url_relay = args.ws_url_relay
-    ws_url_para = args.ws_url_para
-    ss58_format = args.ss58_format
-    type_registry_preset = args.type_registry_preset
-    gas_price = args.gas_price
-
-    abi_path = args.abi
-    abi = get_abi(abi_path)
+    ws_url_relay = os.getenv('WS_URL_RELAY', 'ws://localhost:9951/').split(',')
+    ws_url_para = os.getenv('WS_URL_PARA', 'ws://localhost:10055/').split(',')
+    ss58_format = int(os.getenv('SS58_FORMAT', 2))
+    type_registry_preset = os.getenv('TYPE_REGISTRY_PRESET', 'kusama')
+    para_id = int(os.getenv('PARA_ID'))
 
     contract_address = os.getenv('CONTRACT_ADDRESS', None)
     if contract_address is None:
         sys.exit('No contract address provided')
+
+    abi_path = os.getenv('ABI_PATH', 'oracleservice/abi.json')
+    abi = get_abi(abi_path)
+
     gas = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
 
     w3 = Web3(create_provider(ws_url_para))
@@ -350,7 +340,10 @@ if __name__ == "__main__":
     if substrate is None:
         sys.exit('Failed to create substrate-interface')
 
-    stash_accounts = decode_stash_addresses(substrate, args.stash)
+    stash = os.getenv('STASH_ACCOUNTS').split(',')
+    stash_accounts = decode_stash_addresses(stash)
+    if stash_accounts is None:
+        sys.exit('Failed to parse stash accounts list')
 
     oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
     if oracle_private_key is None:
