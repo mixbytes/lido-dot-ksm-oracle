@@ -3,11 +3,11 @@ from log import init_log
 from substrateinterface import SubstrateInterface
 from substrateinterface.utils.ss58 import ss58_decode
 from web3 import Web3
+from websocket._exceptions import WebSocketAddressException
 
 import json
 import logging
 import os
-import re
 import sys
 
 
@@ -43,7 +43,7 @@ def create_interface(url, ss58_format, type_registry_preset):
     substrate = None
 
     if ss58_format not in SS58_FORMATS:
-        logging.error(f"Invalid SS58 format")
+        logging.error("Invalid SS58 format")
 
         return substrate
 
@@ -54,14 +54,14 @@ def create_interface(url, ss58_format, type_registry_preset):
 
         try:
             substrate = SubstrateInterface(
-                url=u, 
-                ss58_format=ss58_format, 
+                url=u,
+                ss58_format=ss58_format,
                 type_registry_preset=type_registry_preset,
             )
 
             substrate.update_type_registry_presets()
 
-        except:
+        except ValueError:
             logging.warning(f"Failed to connect to {u} with type registry preset '{type_registry_preset}'")
         else:
             break
@@ -79,11 +79,11 @@ def create_provider(url):
 
         try:
             provider = Web3.WebsocketProvider(u)
-        except:
+        except WebSocketAddressException:
             logging.warning(f"Failed to connect to {u}")
         else:
             break
-    
+
     return provider
 
 
@@ -91,10 +91,10 @@ def create_tx(era_id, parachain_balance, staking_parameters):
     nonce = w3.eth.getTransactionCount(account.address)
 
     tx = w3.eth.contract(
-            address=contract_address, 
+            address=contract_address,
             abi=abi
          ).functions.reportRelay(
-            era_id, 
+            era_id,
             {'parachain_balance': parachain_balance, 'stake_ledger': staking_parameters},
          ).buildTransaction({'gas': gas, 'nonce': nonce})
 
@@ -111,7 +111,7 @@ def sign_and_send_to_para(tx):
 
 
 def get_parachain_balance(app, block_hash=None):
-    global para_id 
+    global para_id
 
     if not block_hash:
         block_hash = app.get_chain_head()
@@ -119,12 +119,12 @@ def get_parachain_balance(app, block_hash=None):
     prefix = b'para'
     para_addr = bytearray(prefix)
     para_addr.append(para_id & 0xFF)
-    para_id = para_id>>8
+    para_id = para_id >> 8
     para_addr.append(para_id & 0xFF)
-    para_id = para_id>>8
+    para_id = para_id >> 8
     para_addr.append(para_id & 0xFF)
-    
-    para_addr = app.ss58_encode(para_addr.ljust(32, b'\0')) 
+
+    para_addr = app.ss58_encode(para_addr.ljust(32, b'\0'))
 
     result = app.query(
         module='System',
@@ -133,10 +133,10 @@ def get_parachain_balance(app, block_hash=None):
     )
 
     if result is None:
-        logging.warning(f"{para} is gone")
+        logging.warning(f"{para_id} is gone")
         return 0
 
-    return result.value['data']['free'] 
+    return result.value['data']['free']
 
 
 def get_stash_statuses(controllers_, validators_, nominators_):
@@ -183,7 +183,7 @@ def get_stash_balances(app, stash_accounts):
 
 def get_ledger_data(app, block_hash, stash_accounts):
     ledger_data = {}
-    
+
     for stash in stash_accounts:
         controller = app.query(
             module='Staking',
@@ -206,11 +206,12 @@ def get_ledger_data(app, block_hash, stash_accounts):
 
     return ledger_data
 
+
 def read_staking_parameters(app, block_hash=None, max_results=199):
     if not block_hash:
         block_hash = app.get_chain_head()
 
-    staking_ledger_result = get_ledger_data(app, block_hash, stash_accounts) 
+    staking_ledger_result = get_ledger_data(app, block_hash, stash_accounts)
 
     session_validators_result = app.query(
         module='Session',
@@ -242,7 +243,7 @@ def read_staking_parameters(app, block_hash=None, max_results=199):
         unlocking_values = []
         for elem in controller_info.value['unlocking']:
             unlocking_values.append({'balance': elem['value'], 'era': elem['era']})
-        
+
         stash_addr = '0x' + ss58_decode(controller_info.value['stash'])
         controller_addr = '0x' + ss58_decode(controller)
 
@@ -280,7 +281,7 @@ def find_start_block(app, era_id):
             storage_function='ActiveEra',
             block_hash=previous_block_hash,
         )
-        
+
     return current_block_hash
 
 
@@ -349,6 +350,5 @@ if __name__ == "__main__":
     if oracle_private_key is None:
         sys.exit('Failed to parse oracle private key')
     account = w3.eth.account.from_key(oracle_private_key)
-    
-    start_era_monitoring(substrate)
 
+    start_era_monitoring(substrate)
