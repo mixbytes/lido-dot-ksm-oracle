@@ -44,11 +44,11 @@ class WALManager:
         return os.path.isfile(self.path_to_wal)
 
     def get_last_record(self):
-        return self.content[-1]
+        return self.read()[-1]
 
     def get_penultimate_record(self):
         try:
-            return self.content[-2]
+            return self.read()[-2]
         except IndexError:
             logging.getLogger().info('WAL contains only one record')
             return self.content[-1]
