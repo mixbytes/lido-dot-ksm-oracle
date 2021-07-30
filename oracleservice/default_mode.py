@@ -1,9 +1,11 @@
+from datetime import datetime
 from substrateinterface.utils.ss58 import ss58_decode
-from utils import get_parachain_balance
+from utils import get_active_era, get_parachain_balance
+
 import logging
 
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 abi = None
 account = None
@@ -12,8 +14,10 @@ gas = 0
 oracle_private_key = ''
 para_id = 0
 previous_era = 0
+requests_counter = 0
 stash_accounts = []
 substrate = None
+wal_manager = None
 w3 = None
 
 
@@ -44,21 +48,13 @@ def find_start_block(substrate, era_id):
     current_block_hash = substrate.get_chain_head()
     current_block_info = substrate.get_block_header(current_block_hash)
     previous_block_hash = current_block_info['header']['parentHash']
-    previous_block_era = substrate.query(
-        module='Staking',
-        storage_function='ActiveEra',
-        block_hash=previous_block_hash,
-    )
+    previous_block_era = get_active_era(substrate, previous_block_hash)
 
     while previous_block_era.value['index'] >= era_id:
         current_block_hash = previous_block_hash
         current_block_info = substrate.get_block_header(current_block_hash)
         previous_block_hash = current_block_info['header']['parentHash']
-        previous_block_era = substrate.query(
-            module='Staking',
-            storage_function='ActiveEra',
-            block_hash=previous_block_hash,
-        )
+        previous_block_era = get_active_era(substrate, previous_block_hash)
 
     return current_block_hash
 
@@ -130,7 +126,7 @@ def get_ledger_data(substrate, block_hash, stash_accounts):
     return ledger_data
 
 
-def read_staking_parameters(substrate, block_hash=None, max_results=199):
+def read_staking_parameters(substrate, block_hash=None):
     if not block_hash:
         block_hash = substrate.get_chain_head()
 
@@ -187,17 +183,25 @@ def read_staking_parameters(substrate, block_hash=None, max_results=199):
 
 def subscription_handler(era, update_nr, subscription_id):
     global previous_era
+    global requests_counter
     global substrate
 
     if era.value['index'] == previous_era:
         return
     else:
+        requests_counter = 0
         previous_era = era.value['index']
 
+    requests_counter += 1
     logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
     block_hash = find_start_block(substrate, era.value['index'])
     logger.info(f"Block hash: {block_hash}")
 
+    wal_manager.write(
+        f"date={datetime.now()}" + '\n' +
+        f"era={era.value['index']}" + '\n' +
+        f"block={block_hash}" + '\n'
+        )
     parachain_balance = get_parachain_balance(substrate, para_id, block_hash)
     staking_parameters = read_staking_parameters(substrate, block_hash)
     if not staking_parameters:
@@ -209,6 +213,10 @@ def subscription_handler(era, update_nr, subscription_id):
 
     tx = create_tx(era.value['index'], parachain_balance, staking_parameters)
     sign_and_send_to_para(tx)
+    wal_manager.write(
+        f"requests_counter={requests_counter}" + '\n' +
+        '---' + '\n'
+    )
 
 
 def start_era_monitoring(substrate):
@@ -219,7 +227,7 @@ def start_era_monitoring(substrate):
     )
 
 
-def default_mode(_oracle_pk, _w3, _substrate, _para_id: int, _stash_acc: list, _abi, _contr_addr: str, _gas: int):
+def default_mode(_oracle_pk, _w3, _substrate, _wal_mng, _para_id: int, _stash_acc: list, _abi, _contr_addr: str, _gas: int):
     global abi
     global account
     global contract_address
@@ -228,6 +236,7 @@ def default_mode(_oracle_pk, _w3, _substrate, _para_id: int, _stash_acc: list, _
     global para_id
     global stash_accounts
     global substrate
+    global wal_manager
     global w3
 
     abi = _abi
@@ -237,6 +246,7 @@ def default_mode(_oracle_pk, _w3, _substrate, _para_id: int, _stash_acc: list, _
     para_id = _para_id
     stash_accounts = _stash_acc
     substrate = _substrate
+    wal_manager = _wal_mng
     w3 = _w3
 
     account = w3.eth.account.from_key(oracle_private_key)

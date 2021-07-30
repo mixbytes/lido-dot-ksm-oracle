@@ -6,18 +6,17 @@ from utils import create_interface, create_provider, decode_stash_addresses, get
 from web3 import Web3
 from walmanager import WALManager
 
-import logging
 import os
 import sys
 
 
 DEFAULT_GAS_LIMIT = 10000000
-
-init_log(stdout_level=os.getenv('LOG_LEVEL_STDOUT', 'INFO'))
-logger = logging.getLogger()
+DEFAULT_MAX_NUMBER_OF_REQUESTS = 10
 
 
 def main():
+    init_log(stdout_level=os.getenv('LOG_LEVEL_STDOUT', 'INFO'))
+
     ws_url_relay = os.getenv('WS_URL_RELAY', 'ws://localhost:9951/').split(',')
     ws_url_para = os.getenv('WS_URL_PARA', 'ws://localhost:10055/').split(',')
     ss58_format = int(os.getenv('SS58_FORMAT', 2))
@@ -32,6 +31,7 @@ def main():
     abi = get_abi(abi_path)
 
     gas = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
+    max_number_of_requests = int(os.getenv('MAX_NUMBER_OF_REQUESTS', DEFAULT_MAX_NUMBER_OF_REQUESTS))
 
     w3 = Web3(create_provider(ws_url_para))
     if not w3.isConnected():
@@ -52,9 +52,14 @@ def main():
 
     wal_manager = WALManager()
     if wal_manager.log_exists():
-        recovery_mode(substrate, wal_manager)
-    else:
-        default_mode(oracle_private_key, w3, substrate, para_id, stash_accounts, abi, contract_address, gas)
+        substrate = recovery_mode(w3, substrate, wal_manager, max_number_of_requests, ws_url_relay)
+
+    while True:
+        try:
+            default_mode(oracle_private_key, w3, substrate, wal_manager, para_id, stash_accounts, abi, contract_address, gas)
+
+        except ConnectionRefusedError:
+            substrate = recovery_mode(w3, substrate, wal_manager, max_number_of_requests, ws_url_relay, is_start=False)
 
 
 if __name__ == "__main__":
