@@ -107,3 +107,17 @@ def get_parachain_balance(substrate, para_id=1000, block_hash=None):
 def get_abi(abi_path):
     with open(abi_path, 'r') as f:
         return json.load(f)
+
+
+def get_active_era(substrate, block_hash=None):
+    if block_hash:
+        return substrate.query(
+            module='Staking',
+            storage_function='ActiveEra',
+            block_hash=block_hash,
+        )
+
+    return substrate.query(
+        module='Staking',
+        storage_function='ActiveEra',
+    )
