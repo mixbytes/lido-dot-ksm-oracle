@@ -36,7 +36,10 @@ def create_tx(era_id, parachain_balance, staking_parameters):
 
 
 def sign_and_send_to_para(tx):
+    global requests_counter
+
     tx_signed = w3.eth.account.signTransaction(tx, private_key=oracle_private_key)
+    requests_counter += 1
     tx_hash = w3.eth.sendRawTransaction(tx_signed.rawTransaction)
     tx_receipt = w3.eth.waitForTransactionReceipt(tx_hash)
 
@@ -192,7 +195,6 @@ def subscription_handler(era, update_nr, subscription_id):
         requests_counter = 0
         previous_era = era.value['index']
 
-    requests_counter += 1
     logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
     block_hash = find_start_block(substrate, era.value['index'])
     logger.info(f"Block hash: {block_hash}")
@@ -201,7 +203,7 @@ def subscription_handler(era, update_nr, subscription_id):
         f"date={datetime.now()}" + '\n' +
         f"era={era.value['index']}" + '\n' +
         f"block={block_hash}" + '\n'
-        )
+    )
     parachain_balance = get_parachain_balance(substrate, para_id, block_hash)
     staking_parameters = read_staking_parameters(substrate, block_hash)
     if not staking_parameters:
