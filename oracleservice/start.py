@@ -2,16 +2,22 @@
 from default_mode import default_mode
 from log import init_log
 from recovery_mode import recovery_mode
+from substrateinterface.exceptions import BlockNotFound
 from utils import create_interface, create_provider, decode_stash_addresses, get_abi
 from web3 import Web3
+from web3.exceptions import TimeExhausted
 from walmanager import WALManager
+from websockets.exceptions import ConnectionClosedError
 
+import logging
 import os
 import sys
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_GAS_LIMIT = 10000000
 DEFAULT_MAX_NUMBER_OF_REQUESTS = 10
+DEFAULT_TIMEOUT = 5
 
 
 def main():
@@ -32,6 +38,7 @@ def main():
 
     gas = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
     max_number_of_requests = int(os.getenv('MAX_NUMBER_OF_REQUESTS', DEFAULT_MAX_NUMBER_OF_REQUESTS))
+    timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
 
     w3 = Web3(create_provider(ws_url_para))
     if not w3.isConnected():
@@ -52,14 +59,30 @@ def main():
 
     wal_manager = WALManager()
     if wal_manager.log_exists():
-        substrate = recovery_mode(w3, substrate, wal_manager, max_number_of_requests, ws_url_relay)
+        logger.info('Found WAL file')
+        substrate = recovery_mode(w3, substrate, wal_manager, timeout, max_number_of_requests, ws_url_relay)
 
     while True:
         try:
-            default_mode(oracle_private_key, w3, substrate, wal_manager, para_id, stash_accounts, abi, contract_address, gas)
+            default_mode(
+                oracle_private_key, w3, substrate,
+                wal_manager, para_id, stash_accounts,
+                abi, contract_address, gas,
+            )
 
-        except ConnectionRefusedError:
-            substrate = recovery_mode(w3, substrate, wal_manager, max_number_of_requests, ws_url_relay, is_start=False)
+        except (
+                BlockNotFound,
+                ConnectionClosedError,
+                ConnectionRefusedError,
+                TimeExhausted,
+                ValueError,
+        ) as e:
+            logging.warning(f"Error: {e}")
+            substrate = recovery_mode(
+                w3, substrate, wal_manager,
+                timeout, max_number_of_requests, ws_url_relay,
+                is_start=False,
+            )
 
 
 if __name__ == "__main__":
