@@ -10,8 +10,13 @@ class WALManager:
     content = []
 
     def read(self):
-        with open(self.path_to_wal, 'r') as f:
-            content = f.readlines()
+        try:
+            with open(self.path_to_wal, 'r') as f:
+                content = f.readlines()
+
+        except FileNotFoundError:
+            logging.warning(f"Failed to read from file: {self.path_to_wal}")
+            return None
 
         record = {}
         for line in content:
@@ -26,7 +31,7 @@ class WALManager:
             value = line[eq_sign_index + 1:].rstrip()
             record[key] = value
 
-        if 'approved' in self.content[-1]:
+        if not len(self.content) or 'approved' in self.content[-1]:
             self.content.append(record)
             self.content[-1]['approved'] = False
 
