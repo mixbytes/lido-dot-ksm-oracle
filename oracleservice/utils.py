@@ -11,6 +11,7 @@ SS58_FORMATS = (0, 2, 42)
 
 
 def create_interface(url, ss58_format, type_registry_preset):
+    """Create Substrate interface with one of the nodes given in the list"""
     substrate = None
 
     if ss58_format not in SS58_FORMATS:
@@ -41,6 +42,7 @@ def create_interface(url, ss58_format, type_registry_preset):
 
 
 def create_provider(url):
+    """Create web3 websocket provider with one of the nodes given in the list"""
     provider = None
 
     for u in url:
@@ -59,6 +61,7 @@ def create_provider(url):
 
 
 def decode_stash_addresses(accounts):
+    """Decode stash addresses from ss58, if required"""
     if not accounts:
         return None
 
@@ -74,6 +77,7 @@ def decode_stash_addresses(accounts):
 
 
 def get_parachain_address(_para_id: int, ss58_format: int):
+    """Get parachain address using parachain id with ss58 format provided"""
     prefix = b'para'
     para_addr = bytearray(prefix)
     para_addr.append(_para_id & 0xFF)
@@ -86,6 +90,7 @@ def get_parachain_address(_para_id: int, ss58_format: int):
 
 
 def get_parachain_balance(substrate, para_id=1000, block_hash=None):
+    """Get parachain balance using parachain id"""
     if not block_hash:
         block_hash = substrate.get_chain_head()
 
@@ -105,11 +110,13 @@ def get_parachain_balance(substrate, para_id=1000, block_hash=None):
 
 
 def get_abi(abi_path):
+    """Get ABI from file"""
     with open(abi_path, 'r') as f:
         return json.load(f)
 
 
 def get_active_era(substrate, block_hash=None):
+    """Get active era from specific block or head"""
     if block_hash:
         return substrate.query(
             module='Staking',

@@ -14,6 +14,7 @@ w3 = None
 
 
 def change_node(url, ss58_format, type_registry_preset, undesirable_url=None):
+    """Change node to the first one that comes along, if there is no undesirable one"""
     tried_all = False
 
     while True:
@@ -54,6 +55,12 @@ def change_node(url, ss58_format, type_registry_preset, undesirable_url=None):
 
 
 def recovery_mode(_w3, _substrate, _wal_mng, _timeout: int, max_num_or_req: int, url: list, is_start=True):
+    '''
+    Read content from the WAL file: the last record, if successful, otherwise - the penultimate one.
+    Change node to the first one that comes along, if there is no undesirable one.
+    An "undesirable" node is a node to which N unsuccessful requests were made. Information about
+    the number of requests is contained in WAL. 
+    '''
     global max_number_of_requests
     global timeout
     global substrate

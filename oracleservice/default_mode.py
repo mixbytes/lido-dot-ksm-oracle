@@ -193,7 +193,7 @@ def read_staking_parameters(substrate, block_hash=None):
 
 def subscription_handler(era, update_nr, subscription_id):
     '''
-    Read the staking parameters from the block where the era value is changed, 
+    Read the staking parameters from the block where the era value is changed,
     generate the transaction body, sign and send to the parachain.
     '''
     global previous_era

@@ -13,6 +13,7 @@ class WALManager:
     content = []
 
     def read(self):
+        """Read the contents of the provided WAL file"""
         try:
             with open(self.path_to_wal, 'r') as f:
                 content = f.readlines()
@@ -41,6 +42,7 @@ class WALManager:
         return self.content
 
     def write(self, msg=None):
+        """Write to provided WAL file"""
         if not os.path.exists(self.path_to_wal):
             logger.info(f"Create WAL: {self.path_to_wal}")
 
@@ -49,12 +51,15 @@ class WALManager:
             os.fsync(f.fileno())
 
     def log_exists(self):
+        """Check if WAL file exists"""
         return os.path.isfile(self.path_to_wal)
 
     def get_last_record(self):
+        """Get the latest record of the WAL content"""
         return self.read()[-1]
 
     def get_penultimate_record(self):
+        """Get the penultimate record of the WAL content"""
         try:
             return self.read()[-2]
         except IndexError:
