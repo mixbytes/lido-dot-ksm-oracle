@@ -4,6 +4,9 @@ import logging
 import os
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class WALManager:
     path_to_wal: str = 'oracleservice/staking_parameters.txt'
@@ -39,7 +42,7 @@ class WALManager:
 
     def write(self, msg=None):
         if not os.path.exists(self.path_to_wal):
-            logging.getLogger().info(f"Create WAL: {self.path_to_wal}")
+            logger.info(f"Create WAL: {self.path_to_wal}")
 
         with open(self.path_to_wal, 'a') as f:
             f.write(msg)
@@ -55,5 +58,5 @@ class WALManager:
         try:
             return self.read()[-2]
         except IndexError:
-            logging.getLogger().info('WAL contains only one record')
+            logger.info('WAL contains only one record')
             return self.content[-1]

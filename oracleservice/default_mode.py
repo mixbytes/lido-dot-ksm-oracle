@@ -22,20 +22,20 @@ w3 = None
 
 
 def create_tx(era_id, parachain_balance, staking_parameters):
+    """Create a transaction body using the staking parameters, era id and parachain balance"""
     nonce = w3.eth.getTransactionCount(account.address)
 
-    tx = w3.eth.contract(
+    return w3.eth.contract(
             address=contract_address,
             abi=abi
-        ).functions.reportRelay(
+           ).functions.reportRelay(
             era_id,
             {'parachain_balance': parachain_balance, 'stake_ledger': staking_parameters},
-        ).buildTransaction({'gas': gas, 'nonce': nonce})
-
-    return tx
+           ).buildTransaction({'gas': gas, 'nonce': nonce})
 
 
 def sign_and_send_to_para(tx):
+    """Sign transaction and send to parachain"""
     global requests_counter
 
     tx_signed = w3.eth.account.signTransaction(tx, private_key=oracle_private_key)
@@ -48,6 +48,7 @@ def sign_and_send_to_para(tx):
 
 
 def find_start_block(substrate, era_id):
+    """Find the hash of the block at which the era change occurs"""
     current_block_hash = substrate.get_chain_head()
     current_block_info = substrate.get_block_header(current_block_hash)
     previous_block_hash = current_block_info['header']['parentHash']
@@ -63,7 +64,10 @@ def find_start_block(substrate, era_id):
 
 
 def get_stash_statuses(controllers_, validators_, nominators_):
-    # 0 - Chill, 1 - Nominator, 2 - Validator
+    '''
+    Get stash accounts statuses.
+    0 - Chill, 1 - Nominator, 2 - Validator
+    '''
     statuses = {}
     nominators = set()
     validators = set()
@@ -89,6 +93,7 @@ def get_stash_statuses(controllers_, validators_, nominators_):
 
 
 def get_stash_balances(substrate, stash_accounts):
+    """Get stash accounts free balances"""
     balances = {}
 
     for stash in stash_accounts:
@@ -104,6 +109,7 @@ def get_stash_balances(substrate, stash_accounts):
 
 
 def get_ledger_data(substrate, block_hash, stash_accounts):
+    """Get ledger data using stash accounts list"""
     ledger_data = {}
 
     for stash in stash_accounts:
@@ -130,7 +136,8 @@ def get_ledger_data(substrate, block_hash, stash_accounts):
 
 
 def read_staking_parameters(substrate, block_hash=None):
-    if not block_hash:
+    """Read staking parameters from specific block or from the head"""
+    if block_hash is None:
         block_hash = substrate.get_chain_head()
 
     staking_ledger_result = get_ledger_data(substrate, block_hash, stash_accounts)
@@ -185,6 +192,10 @@ def read_staking_parameters(substrate, block_hash=None):
 
 
 def subscription_handler(era, update_nr, subscription_id):
+    '''
+    Read the staking parameters from the block where the era value is changed, 
+    generate the transaction body, sign and send to the parachain.
+    '''
     global previous_era
     global requests_counter
     global substrate
@@ -222,6 +233,7 @@ def subscription_handler(era, update_nr, subscription_id):
 
 
 def start_era_monitoring(substrate):
+    """Monitoring the moment of the era change"""
     substrate.query(
         module='Staking',
         storage_function='ActiveEra',
@@ -230,6 +242,7 @@ def start_era_monitoring(substrate):
 
 
 def default_mode(_oracle_pk, _w3, _substrate, _wal_mng, _para_id: int, _stash_acc: list, _abi, _contr_addr: str, _gas: int):
+    """Start of the Oracle default mode"""
     global abi
     global account
     global contract_address
