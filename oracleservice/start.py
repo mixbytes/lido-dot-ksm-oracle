@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_GAS_LIMIT = 10000000
 DEFAULT_MAX_NUMBER_OF_REQUESTS = 10
-DEFAULT_TIMEOUT = 5
+DEFAULT_TIMEOUT = 60
+DEFAULT_ERA_DURATION = 30
+DEFAULT_INITIAL_BLOCK_NUMBER = 1
 
 
 def main():
@@ -39,6 +41,9 @@ def main():
     gas = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
     max_number_of_requests = int(os.getenv('MAX_NUMBER_OF_REQUESTS', DEFAULT_MAX_NUMBER_OF_REQUESTS))
     timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
+
+    era_duration = int(os.getenv('ERA_DURATION', DEFAULT_ERA_DURATION))
+    initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
 
     w3 = Web3(create_provider(ws_url_para))
     if not w3.isConnected():
@@ -68,6 +73,7 @@ def main():
                 oracle_private_key, w3, substrate,
                 wal_manager, para_id, stash_accounts,
                 abi, contract_address, gas,
+                era_duration, initial_block_number,
             )
 
         except (

@@ -1,5 +1,6 @@
 from datetime import datetime
 from functools import partial
+from substrateinterface.exceptions import SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
 from utils import get_active_era, get_parachain_balance
 
@@ -38,20 +39,14 @@ def sign_and_send_to_para(w3, priv_key, tx):
     logger.info(f"tx_receipt: {tx_receipt}")
 
 
-def find_start_block(substrate, era_id):
+def find_start_block(substrate, era_id, era_duration, initial_block_number):
     """Find the hash of the block at which the era change occurs"""
-    current_block_hash = substrate.get_chain_head()
-    current_block_info = substrate.get_block_header(current_block_hash)
-    previous_block_hash = current_block_info['header']['parentHash']
-    previous_block_era = get_active_era(substrate, previous_block_hash)
+    block_number = era_id * era_duration + initial_block_number
 
-    while previous_block_era.value['index'] >= era_id:
-        current_block_hash = previous_block_hash
-        current_block_info = substrate.get_block_header(current_block_hash)
-        previous_block_hash = current_block_info['header']['parentHash']
-        previous_block_era = get_active_era(substrate, previous_block_hash)
-
-    return current_block_hash
+    try:
+        return substrate.get_block_hash(block_number)
+    except SubstrateRequestException:
+        return None
 
 
 def get_stash_statuses(controllers_, validators_, nominators_):
@@ -187,6 +182,7 @@ def subscription_handler(
         w3, substrate, account, para_id,
         priv_key, abi, contract_address,
         stash_accounts, gas, wal_manager,
+        era_duration, initial_block_number,
     ):
     '''
     Read the staking parameters from the block where the era value is changed,
@@ -202,7 +198,10 @@ def subscription_handler(
         previous_era = era.value['index']
 
     logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
-    block_hash = find_start_block(substrate, era.value['index'])
+    block_hash = find_start_block(substrate, era.value['index'], era_duration, initial_block_number)
+    if block_hash is None:
+        logging.warning("Can't find the required block")
+        return
     logger.info(f"Block hash: {block_hash}")
 
     wal_manager.write(
@@ -234,6 +233,7 @@ def start_era_monitoring(
         w3, substrate, account, para_id,
         priv_key, abi, contract_address,
         gas, stash_accounts, wal_manager,
+        era_duration, initial_block_number,
     ):
     """Monitoring the moment of the era change"""
     substrate.query(
@@ -244,7 +244,9 @@ def start_era_monitoring(
             account=account,
             abi=abi,
             contract_address=contract_address,
+            era_duration=era_duration,
             gas=gas,
+            initial_block_number=initial_block_number,
             para_id=para_id,
             priv_key=priv_key,
             stash_accounts=stash_accounts,
@@ -258,7 +260,8 @@ def start_era_monitoring(
 def default_mode(
         oracle_priv_key, w3, substrate, wal_manager, 
         para_id: int, stash_accounts: list, 
-        abi, contract_address: str, gas: int
+        abi, contract_address: str, gas: int,
+        era_duration: int, initial_block_number: int,
     ):
     """Start of the Oracle default mode"""
     account = w3.eth.account.from_key(oracle_priv_key)
@@ -268,4 +271,5 @@ def default_mode(
         w3=w3, substrate=substrate, account=account, para_id=para_id,
         priv_key=oracle_priv_key, abi=abi, contract_address=contract_address,
         gas=gas, stash_accounts=stash_accounts, wal_manager=wal_manager,
+        era_duration=era_duration, initial_block_number=initial_block_number,
     )
