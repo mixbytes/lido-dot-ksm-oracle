@@ -1,4 +1,5 @@
 from datetime import datetime
+from functools import partial
 from substrateinterface.utils.ss58 import ss58_decode
 from utils import get_active_era, get_parachain_balance
 
@@ -7,21 +8,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-abi = None
-account = None
-contract_address = ''
-gas = 0
-oracle_private_key = ''
-para_id = 0
 previous_era = 0
 requests_counter = 0
-stash_accounts = []
-substrate = None
-wal_manager = None
-w3 = None
 
 
-def create_tx(era_id, parachain_balance, staking_parameters):
+def create_tx(w3, account, abi, contract_address, gas, era_id, parachain_balance, staking_parameters):
     """Create a transaction body using the staking parameters, era id and parachain balance"""
     nonce = w3.eth.getTransactionCount(account.address)
 
@@ -34,11 +25,11 @@ def create_tx(era_id, parachain_balance, staking_parameters):
            ).buildTransaction({'gas': gas, 'nonce': nonce})
 
 
-def sign_and_send_to_para(tx):
+def sign_and_send_to_para(w3, priv_key, tx):
     """Sign transaction and send to parachain"""
     global requests_counter
 
-    tx_signed = w3.eth.account.signTransaction(tx, private_key=oracle_private_key)
+    tx_signed = w3.eth.account.signTransaction(tx, private_key=priv_key)
     requests_counter += 1
     tx_hash = w3.eth.sendRawTransaction(tx_signed.rawTransaction)
     tx_receipt = w3.eth.waitForTransactionReceipt(tx_hash)
@@ -135,7 +126,7 @@ def get_ledger_data(substrate, block_hash, stash_accounts):
     return ledger_data
 
 
-def read_staking_parameters(substrate, block_hash=None):
+def read_staking_parameters(substrate, stash_accounts, block_hash=None):
     """Read staking parameters from specific block or from the head"""
     if block_hash is None:
         block_hash = substrate.get_chain_head()
@@ -191,14 +182,18 @@ def read_staking_parameters(substrate, block_hash=None):
     return staking_parameters
 
 
-def subscription_handler(era, update_nr, subscription_id):
+def subscription_handler(
+        era, update_nr, subscription_id,
+        w3, substrate, account, para_id,
+        priv_key, abi, contract_address,
+        stash_accounts, gas, wal_manager,
+    ):
     '''
     Read the staking parameters from the block where the era value is changed,
     generate the transaction body, sign and send to the parachain.
     '''
     global previous_era
     global requests_counter
-    global substrate
 
     if era.value['index'] == previous_era:
         return
@@ -216,7 +211,7 @@ def subscription_handler(era, update_nr, subscription_id):
         f"block={block_hash}" + '\n'
     )
     parachain_balance = get_parachain_balance(substrate, para_id, block_hash)
-    staking_parameters = read_staking_parameters(substrate, block_hash)
+    staking_parameters = read_staking_parameters(substrate, stash_accounts, block_hash=block_hash)
     if not staking_parameters:
         logging.warning('No staking parameters found')
         return
@@ -224,47 +219,53 @@ def subscription_handler(era, update_nr, subscription_id):
     logger.info(f"parachain_balance: {parachain_balance}")
     logger.info(f"staking parameters: {staking_parameters}")
 
-    tx = create_tx(era.value['index'], parachain_balance, staking_parameters)
-    sign_and_send_to_para(tx)
+    tx = create_tx(
+        w3, account, abi, contract_address, gas,
+        era.value['index'], parachain_balance, staking_parameters, 
+    )
+    sign_and_send_to_para(w3=w3, priv_key=priv_key, tx=tx)
     wal_manager.write(
         f"requests_counter={requests_counter}" + '\n' +
         '---' + '\n'
     )
 
 
-def start_era_monitoring(substrate):
+def start_era_monitoring(
+        w3, substrate, account, para_id,
+        priv_key, abi, contract_address,
+        gas, stash_accounts, wal_manager,
+    ):
     """Monitoring the moment of the era change"""
     substrate.query(
         module='Staking',
         storage_function='ActiveEra',
-        subscription_handler=subscription_handler
+        subscription_handler=partial(
+            subscription_handler, 
+            account=account,
+            abi=abi,
+            contract_address=contract_address,
+            gas=gas,
+            para_id=para_id,
+            priv_key=priv_key,
+            stash_accounts=stash_accounts,
+            substrate=substrate,
+            wal_manager=wal_manager,
+            w3=w3,
+        )
     )
 
 
-def default_mode(_oracle_pk, _w3, _substrate, _wal_mng, _para_id: int, _stash_acc: list, _abi, _contr_addr: str, _gas: int):
+def default_mode(
+        oracle_priv_key, w3, substrate, wal_manager, 
+        para_id: int, stash_accounts: list, 
+        abi, contract_address: str, gas: int
+    ):
     """Start of the Oracle default mode"""
-    global abi
-    global account
-    global contract_address
-    global gas
-    global oracle_private_key
-    global para_id
-    global stash_accounts
-    global substrate
-    global wal_manager
-    global w3
-
-    abi = _abi
-    contract_address = _contr_addr
-    gas = _gas
-    oracle_private_key = _oracle_pk
-    para_id = _para_id
-    stash_accounts = _stash_acc
-    substrate = _substrate
-    wal_manager = _wal_mng
-    w3 = _w3
-
-    account = w3.eth.account.from_key(oracle_private_key)
+    account = w3.eth.account.from_key(oracle_priv_key)
 
     logger.info('Starting default mode')
-    start_era_monitoring(substrate)
+    start_era_monitoring(
+        w3=w3, substrate=substrate, account=account, para_id=para_id,
+        priv_key=oracle_priv_key, abi=abi, contract_address=contract_address,
+        gas=gas, stash_accounts=stash_accounts, wal_manager=wal_manager,
+    )

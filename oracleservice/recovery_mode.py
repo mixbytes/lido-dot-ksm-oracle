@@ -1,3 +1,4 @@
+from functools import partial
 from substrateinterface import SubstrateInterface
 
 import logging
@@ -6,14 +7,8 @@ import time
 
 logger = logging.getLogger(__name__)
 
-max_number_of_requests = 0
-substrate = None
-timeout = 0
-wal_manager = None
-w3 = None
 
-
-def change_node(url, ss58_format, type_registry_preset, undesirable_url=None):
+def change_node(substrate, url, ss58_format, type_registry_preset, timeout = 60, undesirable_url=None):
     """Change node to the first one that comes along, if there is no undesirable one"""
     tried_all = False
 
@@ -54,25 +49,17 @@ def change_node(url, ss58_format, type_registry_preset, undesirable_url=None):
         time.sleep(timeout)
 
 
-def recovery_mode(_w3, _substrate, _wal_mng, _timeout: int, max_num_or_req: int, url: list, is_start=True):
+def recovery_mode(
+        w3, substrate, wal_manager, 
+        timeout: int, max_number_of_requests: int, 
+        url: list, is_start=True
+    ):
     '''
     Read content from the WAL file: the last record, if successful, otherwise - the penultimate one.
     Change node to the first one that comes along, if there is no undesirable one.
     An "undesirable" node is a node to which N unsuccessful requests were made. Information about
     the number of requests is contained in WAL. 
     '''
-    global max_number_of_requests
-    global timeout
-    global substrate
-    global wal_manager
-    global w3
-
-    max_number_of_requests = max_num_or_req
-    timeout = _timeout
-    substrate = _substrate
-    wal_manager = _wal_mng
-    w3 = _w3
-
     logger.info('Starting recovery mode')
 
     record = wal_manager.get_last_record()
@@ -91,11 +78,14 @@ def recovery_mode(_w3, _substrate, _wal_mng, _timeout: int, max_num_or_req: int,
 
     if counter > max_number_of_requests:
         logger.info('Trying to connect to another node')
-        substrate = change_node(url, substrate.ss58_format, substrate.type_registry_preset, substrate.url)
+        substrate = change_node(
+            substrate, url, substrate.ss58_format, 
+            substrate.type_registry_preset, substrate.url
+        )
 
     elif not is_start or wal_error:
         logger.info('Trying to connect to another node')
-        substrate = change_node(url, substrate.ss58_format, substrate.type_registry_preset)
+        substrate = change_node(substrate, url, substrate.ss58_format, substrate.type_registry_preset)
 
     logger.info('Recovery mode is completed')
     return substrate
