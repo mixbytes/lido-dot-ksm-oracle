@@ -89,11 +89,11 @@ def main():
             oracle.start_default_mode()
 
         except (
-                BlockNotFound,
-                ConnectionClosedError,
-                ConnectionRefusedError,
-                TimeExhausted,
-                ValueError,
+            BlockNotFound,
+            ConnectionClosedError,
+            ConnectionRefusedError,
+            TimeExhausted,
+            ValueError,
         ) as e:
             logging.warning(f"Error: {e}")
             oracle.start_recovery_mode()

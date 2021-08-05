@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from service_parameters import ServiceParameters
 from substrateinterface.exceptions import SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
-from utils import get_parachain_balance
+from utils import change_node, get_active_era, get_parachain_balance
+from websocket._exceptions import WebSocketConnectionClosedException
 
 import logging
 
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Oracle:
+    """A class that contains all the logic of the oracle's work"""
     priv_key: str
     service_params: ServiceParameters
 
@@ -31,14 +33,64 @@ class Oracle:
         self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
         self._start_era_monitoring()
 
+    def start_recovery_mode(self):
+        '''
+        Start of the Oracle recovery mode.
+        The current era id (CEI) from relay chain and oracle report era id (ORED)
+        from parachain are being compared. If CEI = ORED, then do not send a report.
+        If failure requests counter exceeds the allowed value, reconnect to another
+        node.
+        '''
+        logger.info('Starting recovery mode')
+        self.default_mode_started = False
+
+        if self.failure_requests_counter > self.service_params.max_number_of_failure_requests:
+            self.service_params.substrate = change_node(
+                urls=self.service_params.ws_urls_relay,
+                ss58_format=self.service_params.ss58_format,
+                type_registry_preset=self.service_params.type_registry_preset,
+                timeout=self.service_params.timeout,
+                undesirable_url=self.service_params.substrate.url,
+            )
+
+        while True:
+            try:
+                current_era = get_active_era(self.service_params.substrate)
+                oracle_report_era = self._get_oracle_report_era()
+                break
+            except (
+                ConnectionRefusedError,
+                WebSocketConnectionClosedException,
+            ) as e:
+                logging.warning(f"Error: {e}")
+                self.service_params.substrate = change_node(
+                    urls=self.service_params.ws_urls_relay,
+                    ss58_format=self.service_params.ss58_format,
+                    type_registry_preset=self.service_params.type_registry_preset,
+                    timeout=self.service_params.timeout,
+                    undesirable_url=self.service_params.substrate.url,
+                )
+
+        if oracle_report_era.value['index'] == current_era.value['index']:
+            self.previous_era = current_era
+        else:
+            self.previous_era = oracle_report_era
+
+        logger.info('Recovery mode is completed')
+        self.start_default_mode()
+
+    # TODO get last reported era from smart contract
+    def _get_oracle_report_era(self):
+        return 0
+
     def _start_era_monitoring(self):
         self.service_params.substrate.query(
             module='Staking',
             storage_function='ActiveEra',
-            subscription_handler=self._subscription_handler,
+            subscription_handler=self._handle_era_change,
         )
 
-    def _subscription_handler(self, era, update_nr, subscription_id):
+    def _handle_era_change(self, era, update_nr, subscription_id):
         '''
         Read the staking parameters from the block where the era value is changed,
         generate the transaction body, sign and send to the parachain.
@@ -46,7 +98,6 @@ class Oracle:
         if era.value['index'] == self.previous_era:
             return
         else:
-            self.failure_requests_counter = 0
             self.previous_era = era.value['index']
 
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
@@ -226,3 +277,4 @@ class Oracle:
 
         logger.info(f"tx_hash: {tx_hash.hex()}")
         logger.info(f"tx_receipt: {tx_receipt}")
+        self.failure_requests_counter = 0
