@@ -71,7 +71,7 @@ class Oracle:
                     undesirable_url=self.service_params.substrate.url,
                 )
 
-        if oracle_report_era.value['index'] == current_era.value['index']:
+        if oracle_report_era == current_era.value['index']:
             self.previous_era = current_era
         else:
             self.previous_era = oracle_report_era
@@ -79,9 +79,12 @@ class Oracle:
         logger.info('Recovery mode is completed')
         self.start_default_mode()
 
-    # TODO get last reported era from smart contract
     def _get_oracle_report_era(self):
-        return 0
+        # TODO update SC function signature
+        return self.service_params.w3.eth.contract(
+                address=self.service_params.contract_address,
+                abi=self.service_params.abi
+               ).functions.ORED().call()
 
     def _start_era_monitoring(self):
         self.service_params.substrate.query(
