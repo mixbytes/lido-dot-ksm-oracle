@@ -5,9 +5,12 @@ from web3 import Web3
 
 import json
 import logging
+import time
 
 
 SS58_FORMATS = (0, 2, 42)
+
+logger = logging.getLogger(__name__)
 
 
 def create_interface(url, ss58_format, type_registry_preset):
@@ -39,6 +42,47 @@ def create_interface(url, ss58_format, type_registry_preset):
             break
 
     return substrate
+
+
+def change_node(
+        urls: list, ss58_format: int = 2,
+        type_registry_preset: str = 'kusama',
+        timeout: int = 60, undesirable_url: str = None):
+    """Change node to the first one that comes along, if there is no undesirable one"""
+    tried_all = False
+
+    while True:
+        substrate = None
+
+        for u in urls:
+            if u == undesirable_url and not tried_all:
+                logging.info(f"Skipping undesirable url: {u}")
+                continue
+
+            if not u.startswith('ws'):
+                logging.warning(f"Unsupported ws provider: {u}")
+                continue
+
+            try:
+                substrate = SubstrateInterface(
+                    url=u,
+                    ss58_format=ss58_format,
+                    type_registry_preset=type_registry_preset,
+                )
+
+                substrate.update_type_registry_presets()
+
+            except (ValueError, ConnectionRefusedError) as exc:
+                logging.warning(f"Failed to connect to {u}: {exc}")
+
+            else:
+                logging.info(f"The connection was made at the address: {u}")
+                return substrate
+
+        tried_all = True
+        logging.error('Failed to connect to any node')
+        logger.info(f"Timeout: {timeout} seconds")
+        time.sleep(timeout)
 
 
 def create_provider(url):

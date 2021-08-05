@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-from default_mode import default_mode
+from oracle import Oracle
 from log import init_log
-from recovery_mode import recovery_mode
+from service_parameters import ServiceParameters
 from substrateinterface.exceptions import BlockNotFound
 from utils import create_interface, create_provider, decode_stash_addresses, get_abi
 from web3 import Web3
 from web3.exceptions import TimeExhausted
-from walmanager import WALManager
 from websockets.exceptions import ConnectionClosedError
 
 import logging
@@ -16,7 +15,7 @@ import sys
 logger = logging.getLogger(__name__)
 
 DEFAULT_GAS_LIMIT = 10000000
-DEFAULT_MAX_NUMBER_OF_REQUESTS = 10
+DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
 DEFAULT_TIMEOUT = 60
 DEFAULT_ERA_DURATION = 30
 DEFAULT_INITIAL_BLOCK_NUMBER = 1
@@ -39,7 +38,10 @@ def main():
     abi = get_abi(abi_path)
 
     gas = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
-    max_number_of_requests = int(os.getenv('MAX_NUMBER_OF_REQUESTS', DEFAULT_MAX_NUMBER_OF_REQUESTS))
+    max_number_of_failure_requests = int(os.getenv(
+        'MAX_NUMBER_OF_FAILURE_REQUESTS',
+        DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS,
+    ))
     timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
 
     era_duration = int(os.getenv('ERA_DURATION', DEFAULT_ERA_DURATION))
@@ -62,19 +64,29 @@ def main():
     if oracle_private_key is None:
         sys.exit('Failed to parse oracle private key')
 
-    wal_manager = WALManager()
-    if wal_manager.log_exists():
-        logger.info('Found WAL file')
-        substrate = recovery_mode(w3, substrate, wal_manager, timeout, max_number_of_requests, ws_url_relay)
+    service_params = ServiceParameters(
+        abi=abi,
+        contract_address=contract_address,
+        era_duration=era_duration,
+        gas=gas,
+        initial_block_number=initial_block_number,
+        max_number_of_failure_requests=max_number_of_failure_requests,
+        para_id=para_id,
+        stash_accounts=stash_accounts,
+        ss58_format=ss58_format,
+        substrate=substrate,
+        timeout=timeout,
+        type_registry_preset=type_registry_preset,
+        ws_urls_relay=ws_url_relay,
+        ws_urls_para=ws_url_para,
+        w3=w3,
+    )
+
+    oracle = Oracle(priv_key=oracle_private_key, service_params=service_params)
 
     while True:
         try:
-            default_mode(
-                oracle_private_key, w3, substrate,
-                wal_manager, para_id, stash_accounts,
-                abi, contract_address, gas,
-                era_duration, initial_block_number,
-            )
+            oracle.start_default_mode()
 
         except (
                 BlockNotFound,
@@ -84,11 +96,7 @@ def main():
                 ValueError,
         ) as e:
             logging.warning(f"Error: {e}")
-            substrate = recovery_mode(
-                w3, substrate, wal_manager,
-                timeout, max_number_of_requests, ws_url_relay,
-                is_start=False,
-            )
+            oracle.start_recovery_mode()
 
 
 if __name__ == "__main__":
