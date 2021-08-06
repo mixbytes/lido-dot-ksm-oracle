@@ -20,6 +20,7 @@ class Oracle:
     account = None
     default_mode_started: bool = False
     failure_requests_counter: int = 0
+    last_era_reported: int = -1
     previous_era: int = 0
 
     def start_default_mode(self):
@@ -56,7 +57,7 @@ class Oracle:
         while True:
             try:
                 current_era = get_active_era(self.service_params.substrate)
-                oracle_report_era = self._get_oracle_report_era()
+                self.last_era_reported = self._get_oracle_report_era()
                 break
             except (
                 ConnectionRefusedError,
@@ -71,10 +72,10 @@ class Oracle:
                     undesirable_url=self.service_params.substrate.url,
                 )
 
-        if oracle_report_era == current_era.value['index']:
-            self.previous_era = current_era
+        if self.last_era_reported == current_era.value['index']:
+            logging.info('CEI equals ORED: waiting for the next era')
         else:
-            self.previous_era = oracle_report_era
+            logging.info('CEI greater than ORED: create report for the current era')
 
         logger.info('Recovery mode is completed')
         self.start_default_mode()
@@ -102,7 +103,7 @@ class Oracle:
         Read the staking parameters from the block where the era value is changed,
         generate the transaction body, sign and send to the parachain.
         '''
-        if era.value['index'] == self.previous_era:
+        if era.value['index'] == self.previous_era or era.value['index'] == self.last_era_reported:
             return
         else:
             self.previous_era = era.value['index']
