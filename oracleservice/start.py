@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-from oracle import Oracle
 from log import init_log
+from oracle import Oracle
 from service_parameters import ServiceParameters
 from substrateinterface.exceptions import BlockNotFound
 from utils import create_interface, create_provider, decode_stash_addresses, get_abi
-from web3 import Web3
 from web3.exceptions import TimeExhausted
 from websockets.exceptions import ConnectionClosedError
 
@@ -47,10 +46,7 @@ def main():
     era_duration = int(os.getenv('ERA_DURATION', DEFAULT_ERA_DURATION))
     initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
 
-    w3 = Web3(create_provider(ws_url_para))
-    if not w3.isConnected():
-        sys.exit('Failed to create web3 provider')
-
+    w3 = create_provider(ws_url_para, timeout)
     substrate = create_interface(ws_url_relay, ss58_format, type_registry_preset)
     if substrate is None:
         sys.exit('Failed to create substrate-interface')

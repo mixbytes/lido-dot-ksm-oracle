@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from service_parameters import ServiceParameters
 from substrateinterface.exceptions import SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
-from utils import change_node, get_active_era, get_parachain_balance
+from utils import create_interface, get_active_era, get_parachain_balance
 from websocket._exceptions import WebSocketConnectionClosedException
 
 import logging
@@ -37,7 +37,7 @@ class Oracle:
         '''
         Start of the Oracle recovery mode.
         The current era id (CEI) from relay chain and oracle report era id (ORED)
-        from parachain are being compared. If CEI = ORED, then do not send a report.
+        from parachain are being compared. If CEI equals ORED, then do not send a report.
         If failure requests counter exceeds the allowed value, reconnect to another
         node.
         '''
@@ -45,7 +45,7 @@ class Oracle:
         self.default_mode_started = False
 
         if self.failure_requests_counter > self.service_params.max_number_of_failure_requests:
-            self.service_params.substrate = change_node(
+            self.service_params.substrate = create_interface(
                 urls=self.service_params.ws_urls_relay,
                 ss58_format=self.service_params.ss58_format,
                 type_registry_preset=self.service_params.type_registry_preset,
@@ -63,7 +63,7 @@ class Oracle:
                 WebSocketConnectionClosedException,
             ) as e:
                 logging.warning(f"Error: {e}")
-                self.service_params.substrate = change_node(
+                self.service_params.substrate = create_interface(
                     urls=self.service_params.ws_urls_relay,
                     ss58_format=self.service_params.ss58_format,
                     type_registry_preset=self.service_params.type_registry_preset,
@@ -81,10 +81,14 @@ class Oracle:
 
     def _get_oracle_report_era(self):
         # TODO update SC function signature
+        '''
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
                ).functions.ORED().call()
+        '''
+        # TODO remove
+        return 0
 
     def _start_era_monitoring(self):
         self.service_params.substrate.query(

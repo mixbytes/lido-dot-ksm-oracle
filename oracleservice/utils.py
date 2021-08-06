@@ -13,47 +13,20 @@ SS58_FORMATS = (0, 2, 42)
 logger = logging.getLogger(__name__)
 
 
-def create_interface(url, ss58_format, type_registry_preset):
-    """Create Substrate interface with one of the nodes given in the list"""
+def create_interface(
+        urls: list, ss58_format: int = 2,
+        type_registry_preset: str = 'kusama',
+        timeout: int = 60, undesirable_url: str = None) -> SubstrateInterface:
+    """Create Substrate interface with the first node that comes along, if there is no undesirable one"""
     substrate = None
+    tried_all = False
 
     if ss58_format not in SS58_FORMATS:
         logging.error("Invalid SS58 format")
 
         return substrate
 
-    for u in url:
-        if not u.startswith('ws'):
-            logging.warning(f"Unsupported ws provider: {u}")
-            continue
-
-        try:
-            substrate = SubstrateInterface(
-                url=u,
-                ss58_format=ss58_format,
-                type_registry_preset=type_registry_preset,
-            )
-
-            substrate.update_type_registry_presets()
-
-        except ValueError:
-            logging.warning(f"Failed to connect to {u} with type registry preset '{type_registry_preset}'")
-        else:
-            break
-
-    return substrate
-
-
-def change_node(
-        urls: list, ss58_format: int = 2,
-        type_registry_preset: str = 'kusama',
-        timeout: int = 60, undesirable_url: str = None):
-    """Change node to the first one that comes along, if there is no undesirable one"""
-    tried_all = False
-
     while True:
-        substrate = None
-
         for u in urls:
             if u == undesirable_url and not tried_all:
                 logging.info(f"Skipping undesirable url: {u}")
@@ -72,7 +45,10 @@ def change_node(
 
                 substrate.update_type_registry_presets()
 
-            except (ValueError, ConnectionRefusedError) as exc:
+            except (
+                ValueError,
+                ConnectionRefusedError,
+            ) as exc:
                 logging.warning(f"Failed to connect to {u}: {exc}")
 
             else:
@@ -85,23 +61,36 @@ def change_node(
         time.sleep(timeout)
 
 
-def create_provider(url):
+def create_provider(urls: list, timeout: int = 60) -> Web3:
     """Create web3 websocket provider with one of the nodes given in the list"""
     provider = None
 
-    for u in url:
-        if not u.startswith('ws'):
-            logging.warning(f"Unsupported ws provider: {u}")
-            continue
+    while True:
+        for url in urls:
+            if not url.startswith('ws'):
+                logging.warning(f"Unsupported ws provider: {url}")
+                continue
 
-        try:
-            provider = Web3.WebsocketProvider(u)
-        except WebSocketAddressException:
-            logging.warning(f"Failed to connect to {u}")
-        else:
-            break
+            try:
+                provider = Web3.WebsocketProvider(url)
+                w3 = Web3(provider)
+                if not w3.isConnected():
+                    logging.warning(f"Failed to connect to {url}: provider is not connected")
+                    raise ConnectionRefusedError
 
-    return provider
+            except (
+                ConnectionRefusedError,
+                ValueError,
+                WebSocketAddressException,
+            ) as exc:
+                logging.warning(f"Failed to connect to {url}: {exc}")
+            else:
+                logger.info(f"Successfully connected to {url}")
+                return w3
+
+        logging.error('Failed to connect to any node')
+        logger.info(f"Timeout: {timeout} seconds")
+        time.sleep(timeout)
 
 
 def decode_stash_addresses(accounts):
