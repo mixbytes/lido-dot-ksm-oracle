@@ -21,7 +21,6 @@ class Oracle:
     default_mode_started: bool = False
     failure_requests_counter: int = 0
     last_era_reported: int = -1
-    previous_era: int = 0
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -103,10 +102,19 @@ class Oracle:
         Read the staking parameters from the block where the era value is changed,
         generate the transaction body, sign and send to the parachain.
         '''
-        if era.value['index'] == self.previous_era or era.value['index'] == self.last_era_reported:
+        if self.last_era_reported == -1:
+            try:
+                self.last_era_reported = self._get_oracle_report_era()
+            except (
+                ConnectionRefusedError,
+                WebSocketConnectionClosedException,
+            ) as e:
+                logging.warning(f"Error: {e}")
+                raise e 
+
+        if era.value['index'] == self.last_era_reported:
+            logging.info('CEI equals ORED: waiting for the next era')
             return
-        else:
-            self.previous_era = era.value['index']
 
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
         block_hash = self._find_start_block(era.value['index'])
@@ -127,6 +135,7 @@ class Oracle:
 
         logger.info(f"parachain_balance: {parachain_balance}")
         logger.info(f"staking parameters: {staking_parameters}")
+        logger.info(f"Failure requests counter: {self.failure_requests_counter}")
 
         tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
         self._sign_and_send_to_para(tx)
@@ -285,4 +294,5 @@ class Oracle:
 
         logger.info(f"tx_hash: {tx_hash.hex()}")
         logger.info(f"tx_receipt: {tx_receipt}")
+        logger.info('Resetting failure requests counter')
         self.failure_requests_counter = 0
