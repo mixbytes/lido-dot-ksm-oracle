@@ -82,7 +82,7 @@ def create_provider(urls: list, timeout: int = 60) -> Web3:
                 WebSocketAddressException,
             ) as exc:
                 logging.warning(f"Failed to connect to {url}: {exc}")
-            
+
             except ConnectionRefusedError:
                 logging.warning(f"Failed to connect to {url}: provider is not connected")
 

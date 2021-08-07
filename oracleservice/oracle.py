@@ -110,7 +110,7 @@ class Oracle:
                 WebSocketConnectionClosedException,
             ) as e:
                 logging.warning(f"Error: {e}")
-                raise e 
+                raise e
 
         if era.value['index'] == self.last_era_reported:
             logging.info('CEI equals ORED: waiting for the next era')
