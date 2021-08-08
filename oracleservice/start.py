@@ -4,7 +4,7 @@ from oracle import Oracle
 from service_parameters import ServiceParameters
 from substrateinterface.exceptions import BlockNotFound
 from utils import create_interface, create_provider, decode_stash_addresses, get_abi
-from web3.exceptions import TimeExhausted
+from web3.exceptions import ABIFunctionNotFound, TimeExhausted
 from websockets.exceptions import ConnectionClosedError
 
 import logging
@@ -84,14 +84,17 @@ def main():
         try:
             oracle.start_default_mode()
 
+        except ABIFunctionNotFound as exc:
+            sys.exit(f"Error: {exc}")
+
         except (
             BlockNotFound,
             ConnectionClosedError,
             ConnectionRefusedError,
             TimeExhausted,
             ValueError,
-        ) as e:
-            logging.warning(f"Error: {e}")
+        ) as exc:
+            logging.warning(f"Error: {exc}")
             oracle.start_recovery_mode()
 
 

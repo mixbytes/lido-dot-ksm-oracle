@@ -77,7 +77,6 @@ class Oracle:
             logging.info('CEI greater than ORED: create report for the current era')
 
         logger.info('Recovery mode is completed')
-        self.start_default_mode()
 
     def _get_oracle_report_era(self):
         # TODO update SC function signature
