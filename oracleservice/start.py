@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from log import init_log
 from oracle import Oracle
+from prometheus_client import start_http_server
 from service_parameters import ServiceParameters
 from substrateinterface.exceptions import BlockNotFound
 from utils import create_interface, create_provider, decode_stash_addresses, get_abi
@@ -13,15 +14,20 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GAS_LIMIT = 10000000
-DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
-DEFAULT_TIMEOUT = 60
 DEFAULT_ERA_DURATION = 30
+DEFAULT_GAS_LIMIT = 10000000
 DEFAULT_INITIAL_BLOCK_NUMBER = 1
+DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
+DEFAULT_PROMETHEUS_METRICS_PORT = 8000
+DEFAULT_TIMEOUT = 60
 
 
 def main():
     init_log(stdout_level=os.getenv('LOG_LEVEL_STDOUT', 'INFO'))
+
+    prometheus_metrics_port = int(os.getenv('PROMETHEUS_METRICS_PORT', DEFAULT_PROMETHEUS_METRICS_PORT))
+    logger.info(f"Starting the prometheus server on port {prometheus_metrics_port}")
+    start_http_server(prometheus_metrics_port)
 
     ws_url_relay = os.getenv('WS_URL_RELAY', 'ws://localhost:9951/').split(',')
     ws_url_para = os.getenv('WS_URL_PARA', 'ws://localhost:10055/').split(',')

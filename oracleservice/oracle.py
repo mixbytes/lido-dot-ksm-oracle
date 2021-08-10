@@ -1,11 +1,13 @@
 from dataclasses import dataclass
+from prometheus_metrics import metrics_exporter
 from service_parameters import ServiceParameters
-from substrateinterface.exceptions import SubstrateRequestException
+from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
 from utils import create_interface, get_active_era, get_parachain_balance
 from websocket._exceptions import WebSocketConnectionClosedException
 
 import logging
+import time
 
 
 logger = logging.getLogger(__name__)
@@ -30,7 +32,8 @@ class Oracle:
             logging.warning('The default oracle mode is already working')
 
         logger.info('Starting default mode')
-        self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
+        with metrics_exporter.para_exceptions_count.count_exceptions():
+            self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
@@ -42,27 +45,11 @@ class Oracle:
         node.
         '''
         logger.info('Starting recovery mode')
+        metrics_exporter.is_recovery_mode_active.set(True)
         self.default_mode_started = False
 
-        if self.failure_requests_counter > self.service_params.max_number_of_failure_requests:
-            self.service_params.substrate = create_interface(
-                urls=self.service_params.ws_urls_relay,
-                ss58_format=self.service_params.ss58_format,
-                type_registry_preset=self.service_params.type_registry_preset,
-                timeout=self.service_params.timeout,
-                undesirable_url=self.service_params.substrate.url,
-            )
-
-        while True:
-            try:
-                current_era = get_active_era(self.service_params.substrate)
-                self.last_era_reported = self._get_oracle_report_era()
-                break
-            except (
-                ConnectionRefusedError,
-                WebSocketConnectionClosedException,
-            ) as e:
-                logging.warning(f"Error: {e}")
+        with metrics_exporter.relay_exceptions_count.count_exceptions():
+            if self.failure_requests_counter > self.service_params.max_number_of_failure_requests:
                 self.service_params.substrate = create_interface(
                     urls=self.service_params.ws_urls_relay,
                     ss58_format=self.service_params.ss58_format,
@@ -71,11 +58,30 @@ class Oracle:
                     undesirable_url=self.service_params.substrate.url,
                 )
 
-        if self.last_era_reported == current_era.value['index']:
-            logging.info('CEI equals ORED: waiting for the next era')
-        else:
-            logging.info('CEI greater than ORED: create report for the current era')
+            while True:
+                try:
+                    current_era = get_active_era(self.service_params.substrate)
+                    self.last_era_reported = self._get_oracle_report_era()
+                    break
+                except (
+                    ConnectionRefusedError,
+                    WebSocketConnectionClosedException,
+                ) as e:
+                    logging.warning(f"Error: {e}")
+                    self.service_params.substrate = create_interface(
+                        urls=self.service_params.ws_urls_relay,
+                        ss58_format=self.service_params.ss58_format,
+                        type_registry_preset=self.service_params.type_registry_preset,
+                        timeout=self.service_params.timeout,
+                        undesirable_url=self.service_params.substrate.url,
+                    )
 
+        if self.last_era_reported == current_era.value['index']:
+            logger.info('CEI equals ORED: waiting for the next era')
+        else:
+            logger.info('CEI greater than ORED: create report for the current era')
+
+        metrics_exporter.is_recovery_mode_active.set(False)
         logger.info('Recovery mode is completed')
 
     def _get_oracle_report_era(self):
@@ -103,31 +109,36 @@ class Oracle:
         '''
         if self.last_era_reported == -1:
             try:
-                self.last_era_reported = self._get_oracle_report_era()
+                with metrics_exporter.para_exceptions_count.count_exceptions():
+                    self.last_era_reported = self._get_oracle_report_era()
             except (
                 ConnectionRefusedError,
                 WebSocketConnectionClosedException,
-            ) as e:
-                logging.warning(f"Error: {e}")
-                raise e
+            ) as exc:
+                logging.warning(f"Error: {exc}")
+                raise exc
 
+        metrics_exporter.last_era_reported.set(self.last_era_reported)
+        metrics_exporter.active_era_id.set(era.value['index'])
         if era.value['index'] == self.last_era_reported:
-            logging.info('CEI equals ORED: waiting for the next era')
+            logger.info('CEI equals ORED: waiting for the next era')
             return
 
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
-        block_hash = self._find_start_block(era.value['index'])
-        if block_hash is None:
-            logging.warning("Can't find the required block")
-            return
-        logger.info(f"Block hash: {block_hash}")
+        with metrics_exporter.relay_exceptions_count.count_exceptions():
+            block_hash, block_number = self._find_start_block(era.value['index'])
+            if block_hash is None:
+                logging.warning("Can't find the required block")
+                raise BlockNotFound
+            logger.info(f"Block hash: {block_hash}")
+            metrics_exporter.previous_era_change_block_number.set(block_number)
 
-        parachain_balance = get_parachain_balance(
-            self.service_params.substrate,
-            self.service_params.para_id,
-            block_hash,
-        )
-        staking_parameters = self._read_staking_parameters(block_hash)
+            parachain_balance = get_parachain_balance(
+                self.service_params.substrate,
+                self.service_params.para_id,
+                block_hash,
+            )
+            staking_parameters = self._read_staking_parameters(block_hash)
         if not staking_parameters:
             logging.warning('No staking parameters found')
             return
@@ -136,17 +147,21 @@ class Oracle:
         logger.info(f"staking parameters: {staking_parameters}")
         logger.info(f"Failure requests counter: {self.failure_requests_counter}")
 
-        tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
-        self._sign_and_send_to_para(tx)
+        with metrics_exporter.para_exceptions_count.count_exceptions():
+            tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
+            self._sign_and_send_to_para(tx)
+
+        metrics_exporter.time_elapsed_until_last_era_report.set(time.time())
+        logger.info('Waiting for the next era')
 
     def _find_start_block(self, era_id):
         """Find the hash of the block at which the era change occurs"""
         block_number = era_id * self.service_params.era_duration + self.service_params.initial_block_number
 
         try:
-            return self.service_params.substrate.get_block_hash(block_number)
+            return self.service_params.substrate.get_block_hash(block_number), block_number
         except SubstrateRequestException:
-            return None
+            return None, None
 
     def _read_staking_parameters(self, block_hash=None):
         """Read staking parameters from specific block or from the head"""
@@ -167,6 +182,7 @@ class Oracle:
             block_hash=block_hash,
         )
 
+        metrics_exporter.total_stashes_free_balance.set(0)
         stash_balances = self._get_stash_balances()
 
         stash_statuses = self._get_stash_statuses(
@@ -241,6 +257,7 @@ class Oracle:
             )
 
             balances[stash] = result.value['data']['free']
+            metrics_exporter.total_stashes_free_balance.inc(balances[stash])
 
         return balances
 
