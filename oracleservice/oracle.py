@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from service_parameters import ServiceParameters
 from substrateinterface.exceptions import SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
@@ -21,6 +21,7 @@ class Oracle:
     default_mode_started: bool = False
     failure_requests_counter: int = 0
     last_era_reported: int = -1
+    undesirable_urls: set = field(default_factory=set)
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -45,12 +46,13 @@ class Oracle:
         self.default_mode_started = False
 
         if self.failure_requests_counter > self.service_params.max_number_of_failure_requests:
+            self.undesirable_urls.add(self.service_params.substrate.url)
             self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                 urls=self.service_params.ws_urls_relay,
                 ss58_format=self.service_params.ss58_format,
                 type_registry_preset=self.service_params.type_registry_preset,
                 timeout=self.service_params.timeout,
-                undesirable_url=self.service_params.substrate.url,
+                undesirable_urls=self.undesirable_urls,
             )
 
         while True:
@@ -63,12 +65,13 @@ class Oracle:
                 WebSocketConnectionClosedException,
             ) as e:
                 logging.warning(f"Error: {e}")
+                self.undesirable_urls.add(self.service_params.substrate.url)
                 self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                     urls=self.service_params.ws_urls_relay,
                     ss58_format=self.service_params.ss58_format,
                     type_registry_preset=self.service_params.type_registry_preset,
                     timeout=self.service_params.timeout,
-                    undesirable_url=self.service_params.substrate.url,
+                    undesirable_urls=self.undesirable_urls,
                 )
 
         if self.last_era_reported == current_era.value['index']:
@@ -287,6 +290,7 @@ class Oracle:
             logging.debug(f"tx_hash: {tx_hash.hex()}")
             logger.info('The report was sent successfully. Resetting failure requests counter')
             self.failure_requests_counter = 0
+            self.undesirable_urls.clear()
         else:
             logging.warning('Failed to send transaction')
             logging.debug(f"tx_receipt: {tx_receipt}")

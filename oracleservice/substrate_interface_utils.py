@@ -13,7 +13,7 @@ class SubstrateInterfaceUtils:
     def create_interface(
         urls: list, ss58_format: int = 2,
         type_registry_preset: str = 'kusama',
-        timeout: int = 60, undesirable_url: str = None,
+        timeout: int = 60, undesirable_urls: set = set(),
     ) -> SubstrateInterface:
         """Create Substrate interface with the first node that comes along, if there is no undesirable one"""
         substrate = None
@@ -26,7 +26,7 @@ class SubstrateInterfaceUtils:
 
         while True:
             for u in urls:
-                if u == undesirable_url and not tried_all:
+                if u in undesirable_urls and not tried_all:
                     logging.info(f"Skipping undesirable url: {u}")
                     continue
 
