@@ -8,9 +8,9 @@ import logging
 import time
 
 
-SS58_FORMATS = (0, 2, 42)
-
 logger = logging.getLogger(__name__)
+
+SS58_FORMATS = (0, 2, 42)
 
 
 def create_interface(

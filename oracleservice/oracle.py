@@ -32,6 +32,7 @@ class Oracle:
             logging.warning('The default oracle mode is already working')
 
         logger.info('Starting default mode')
+        metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
         with metrics_exporter.para_exceptions_count.count_exceptions():
             self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
         self._start_era_monitoring()
@@ -75,6 +76,8 @@ class Oracle:
                         timeout=self.service_params.timeout,
                         undesirable_url=self.service_params.substrate.url,
                     )
+
+        metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
 
         if self.last_era_reported == current_era.value['index']:
             logger.info('CEI equals ORED: waiting for the next era')
@@ -307,6 +310,10 @@ class Oracle:
         self.failure_requests_counter += 1
         tx_hash = self.service_params.w3.eth.sendRawTransaction(tx_signed.rawTransaction)
         tx_receipt = self.service_params.w3.eth.waitForTransactionReceipt(tx_hash)
+        if tx_receipt.status == 1:
+            metrics_exporter.tx_success.observe(1)
+        else:
+            metrics_exporter.tx_revert.observe(1)
 
         logger.info(f"tx_hash: {tx_hash.hex()}")
         logger.info(f"tx_receipt: {tx_receipt}")
