@@ -4,9 +4,9 @@ import sys
 
 
 def init_log(stdout_level: str = 'INFO'):
-    """ initialize root logger """
+    """Initialize root logger"""
     if hasattr(init_log, '_called'):
-        logging.warning("init_log must be called only once")
+        logging.warning('init_log must be called only once')
         return
 
     init_log._called = True

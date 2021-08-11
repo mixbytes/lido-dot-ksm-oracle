@@ -2,8 +2,10 @@
 from log import init_log
 from oracle import Oracle
 from service_parameters import ServiceParameters
+from substrateinterface import Keypair
 from substrateinterface.exceptions import BlockNotFound
-from utils import create_interface, create_provider, decode_stash_addresses, get_abi
+from substrate_interface_utils import SubstrateInterfaceUtils
+from utils import create_provider, get_abi
 from web3.exceptions import ABIFunctionNotFound, TimeExhausted
 from websockets.exceptions import ConnectionClosedError
 
@@ -47,12 +49,12 @@ def main():
     initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
 
     w3 = create_provider(ws_url_para, timeout)
-    substrate = create_interface(ws_url_relay, ss58_format, type_registry_preset)
+    substrate = SubstrateInterfaceUtils().create_interface(ws_url_relay, ss58_format, type_registry_preset)
     if substrate is None:
         sys.exit('Failed to create substrate-interface')
 
     stash = os.getenv('STASH_ACCOUNTS').split(',')
-    stash_accounts = decode_stash_addresses(stash)
+    stash_accounts = [Keypair(ss58_address=acc, ss58_format=ss58_format).public_key for acc in stash]
     if stash_accounts is None:
         sys.exit('Failed to parse stash accounts list')
 

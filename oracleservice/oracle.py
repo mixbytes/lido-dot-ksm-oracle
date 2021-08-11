@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from service_parameters import ServiceParameters
 from substrateinterface.exceptions import SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
-from utils import create_interface, get_active_era, get_parachain_balance
+from substrate_interface_utils import SubstrateInterfaceUtils
 from websocket._exceptions import WebSocketConnectionClosedException
 
 import logging
@@ -21,6 +21,7 @@ class Oracle:
     default_mode_started: bool = False
     failure_requests_counter: int = 0
     last_era_reported: int = -1
+    _substrate_interface_utils: SubstrateInterfaceUtils = SubstrateInterfaceUtils()
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -45,7 +46,7 @@ class Oracle:
         self.default_mode_started = False
 
         if self.failure_requests_counter > self.service_params.max_number_of_failure_requests:
-            self.service_params.substrate = create_interface(
+            self.service_params.substrate = self._substrate_interface_utils.create_interface(
                 urls=self.service_params.ws_urls_relay,
                 ss58_format=self.service_params.ss58_format,
                 type_registry_preset=self.service_params.type_registry_preset,
@@ -55,7 +56,7 @@ class Oracle:
 
         while True:
             try:
-                current_era = get_active_era(self.service_params.substrate)
+                current_era = self._substrate_interface_utils.get_active_era(self.service_params.substrate)
                 self.last_era_reported = self._get_oracle_report_era()
                 break
             except (
@@ -63,7 +64,7 @@ class Oracle:
                 WebSocketConnectionClosedException,
             ) as e:
                 logging.warning(f"Error: {e}")
-                self.service_params.substrate = create_interface(
+                self.service_params.substrate = self._substrate_interface_utils.create_interface(
                     urls=self.service_params.ws_urls_relay,
                     ss58_format=self.service_params.ss58_format,
                     type_registry_preset=self.service_params.type_registry_preset,
@@ -72,9 +73,9 @@ class Oracle:
                 )
 
         if self.last_era_reported == current_era.value['index']:
-            logging.info('CEI equals ORED: waiting for the next era')
+            logger.info('CEI equals ORED: waiting for the next era')
         else:
-            logging.info('CEI greater than ORED: create report for the current era')
+            logger.info('CEI greater than ORED: create report for the current era')
 
         logger.info('Recovery mode is completed')
 
@@ -112,7 +113,7 @@ class Oracle:
                 raise e
 
         if era.value['index'] == self.last_era_reported:
-            logging.info('CEI equals ORED: waiting for the next era')
+            logger.info('CEI equals ORED: waiting for the next era')
             return
 
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
@@ -122,7 +123,7 @@ class Oracle:
             return
         logger.info(f"Block hash: {block_hash}")
 
-        parachain_balance = get_parachain_balance(
+        parachain_balance = self._substrate_interface_utils.get_parachain_balance(
             self.service_params.substrate,
             self.service_params.para_id,
             block_hash,
@@ -132,12 +133,15 @@ class Oracle:
             logging.warning('No staking parameters found')
             return
 
-        logger.info(f"parachain_balance: {parachain_balance}")
-        logger.info(f"staking parameters: {staking_parameters}")
-        logger.info(f"Failure requests counter: {self.failure_requests_counter}")
+        logging.debug(';'.join([
+            f"parachain_balance: {parachain_balance}",
+            f"staking parameters: {staking_parameters}",
+            f"failure requests counter: {self.failure_requests_counter}",
+        ]))
 
         tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
         self._sign_and_send_to_para(tx)
+        logger.info('Waiting for the next era')
 
     def _find_start_block(self, era_id):
         """Find the hash of the block at which the era change occurs"""
@@ -178,13 +182,7 @@ class Oracle:
         staking_parameters = []
 
         for controller, controller_info in staking_ledger_result.items():
-            # filter out validators and leave only nominators
-            if stash_statuses[controller_info.value['stash']] != 1:
-                continue
-
-            unlocking_values = []
-            for elem in controller_info.value['unlocking']:
-                unlocking_values.append({'balance': elem['value'], 'era': elem['era']})
+            unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
 
             stash_addr = '0x' + ss58_decode(controller_info.value['stash'])
             controller_addr = '0x' + ss58_decode(controller)
@@ -250,13 +248,8 @@ class Oracle:
         0 - Chill, 1 - Nominator, 2 - Validator
         '''
         statuses = {}
-        nominators = set()
-        validators = set()
-
-        for nominator, _ in nominators_:
-            nominators.add(nominator.value)
-        for validator in validators_.value:
-            validators.add(validator)
+        nominators = set(nominator.value for nominator, _ in nominators_)
+        validators = set(validator for validator in validators_.value)
 
         for controller_info in controllers_.values():
             stash_account = controller_info.value['stash']
@@ -291,7 +284,10 @@ class Oracle:
         tx_hash = self.service_params.w3.eth.sendRawTransaction(tx_signed.rawTransaction)
         tx_receipt = self.service_params.w3.eth.waitForTransactionReceipt(tx_hash)
 
-        logger.info(f"tx_hash: {tx_hash.hex()}")
-        logger.info(f"tx_receipt: {tx_receipt}")
-        logger.info('Resetting failure requests counter')
-        self.failure_requests_counter = 0
+        if tx_receipt.status == 1:
+            logging.debug(f"tx_hash: {tx_hash.hex()}")
+            logger.info('The report was sent successfully. Resetting failure requests counter')
+            self.failure_requests_counter = 0
+        else:
+            logging.warning('Failed to send transaction')
+            logging.debug(f"tx_receipt: {tx_receipt}")
