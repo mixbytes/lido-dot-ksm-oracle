@@ -1,5 +1,4 @@
-from substrateinterface import SubstrateInterface
-from substrateinterface.utils.ss58 import ss58_encode
+from substrateinterface import Keypair, SubstrateInterface
 
 import logging
 import time
@@ -12,7 +11,7 @@ SS58_FORMATS = (0, 2, 42)
 
 class SubstrateInterfaceUtils:
     def create_interface(
-        self, urls: list, ss58_format: int = 2,
+        urls: list, ss58_format: int = 2,
         type_registry_preset: str = 'kusama',
         timeout: int = 60, undesirable_url: str = None,
     ) -> SubstrateInterface:
@@ -61,16 +60,16 @@ class SubstrateInterfaceUtils:
             logger.info(f"Timeout: {timeout} seconds")
             time.sleep(timeout)
 
-    def get_parachain_balance(self, substrate: SubstrateInterface, para_id: int = 1000, block_hash: str = None):
+    def get_parachain_balance(substrate: SubstrateInterface, para_id: int = 1000, block_hash: str = None):
         """Get parachain balance using parachain id"""
         if not block_hash:
             block_hash = substrate.get_chain_head()
 
-        para_addr = self.get_parachain_address(para_id, substrate.ss58_format)
+        para_addr = SubstrateInterfaceUtils.get_parachain_address(para_id, substrate.ss58_format)
         result = substrate.query(
             module='System',
             storage_function='Account',
-            params=[para_addr],
+            params=[para_addr.ss58_address],
         )
 
         if result is None:
@@ -79,7 +78,7 @@ class SubstrateInterfaceUtils:
 
         return result.value['data']['free']
 
-    def get_active_era(self, substrate: SubstrateInterface, block_hash: str = None):
+    def get_active_era(substrate: SubstrateInterface, block_hash: str = None):
         """Get active era from specific block or head"""
         if block_hash:
             return substrate.query(
@@ -93,7 +92,7 @@ class SubstrateInterfaceUtils:
             storage_function='ActiveEra',
         )
 
-    def get_parachain_address(self, _para_id: int, ss58_format: int):
+    def get_parachain_address(_para_id: int, ss58_format: int):
         """Get parachain address using parachain id with ss58 format provided"""
         prefix = b'para'
         para_addr = bytearray(prefix)
@@ -103,4 +102,4 @@ class SubstrateInterfaceUtils:
         _para_id = _para_id >> 8
         para_addr.append(_para_id & 0xFF)
 
-        return ss58_encode(para_addr.ljust(32, b'\0'), ss58_format=ss58_format)
+        return Keypair(public_key=para_addr.ljust(32, b'\0').hex(), ss58_format=ss58_format)

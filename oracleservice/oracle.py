@@ -21,7 +21,6 @@ class Oracle:
     default_mode_started: bool = False
     failure_requests_counter: int = 0
     last_era_reported: int = -1
-    _substrate_interface_utils: SubstrateInterfaceUtils = SubstrateInterfaceUtils()
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -46,7 +45,7 @@ class Oracle:
         self.default_mode_started = False
 
         if self.failure_requests_counter > self.service_params.max_number_of_failure_requests:
-            self.service_params.substrate = self._substrate_interface_utils.create_interface(
+            self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                 urls=self.service_params.ws_urls_relay,
                 ss58_format=self.service_params.ss58_format,
                 type_registry_preset=self.service_params.type_registry_preset,
@@ -56,7 +55,7 @@ class Oracle:
 
         while True:
             try:
-                current_era = self._substrate_interface_utils.get_active_era(self.service_params.substrate)
+                current_era = SubstrateInterfaceUtils.get_active_era(self.service_params.substrate)
                 self.last_era_reported = self._get_oracle_report_era()
                 break
             except (
@@ -64,7 +63,7 @@ class Oracle:
                 WebSocketConnectionClosedException,
             ) as e:
                 logging.warning(f"Error: {e}")
-                self.service_params.substrate = self._substrate_interface_utils.create_interface(
+                self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                     urls=self.service_params.ws_urls_relay,
                     ss58_format=self.service_params.ss58_format,
                     type_registry_preset=self.service_params.type_registry_preset,
@@ -123,7 +122,7 @@ class Oracle:
             return
         logger.info(f"Block hash: {block_hash}")
 
-        parachain_balance = self._substrate_interface_utils.get_parachain_balance(
+        parachain_balance = SubstrateInterfaceUtils.get_parachain_balance(
             self.service_params.substrate,
             self.service_params.para_id,
             block_hash,

@@ -49,7 +49,7 @@ def main():
     initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
 
     w3 = create_provider(ws_url_para, timeout)
-    substrate = SubstrateInterfaceUtils().create_interface(ws_url_relay, ss58_format, type_registry_preset)
+    substrate = SubstrateInterfaceUtils.create_interface(ws_url_relay, ss58_format, type_registry_preset)
     if substrate is None:
         sys.exit('Failed to create substrate-interface')
 
