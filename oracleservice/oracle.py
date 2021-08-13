@@ -19,7 +19,7 @@ class Oracle:
 
     account = None
     default_mode_started: bool = False
-    failure_requests_counter: int = 0
+    failure_requests_count: dict = field(default_factory=dict)
     last_era_reported: int = -1
     undesirable_urls: set = field(default_factory=set)
 
@@ -32,6 +32,7 @@ class Oracle:
 
         logger.info('Starting default mode')
         self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
+        self.failure_requests_count[self.service_params.substrate.url] = 0
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
@@ -45,7 +46,7 @@ class Oracle:
         logger.info('Starting recovery mode')
         self.default_mode_started = False
 
-        if self.failure_requests_counter > self.service_params.max_number_of_failure_requests:
+        if self.failure_requests_count[self.service_params.substrate.url] > self.service_params.max_number_of_failure_requests:
             self.undesirable_urls.add(self.service_params.substrate.url)
             self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                 urls=self.service_params.ws_urls_relay,
@@ -65,7 +66,6 @@ class Oracle:
                 WebSocketConnectionClosedException,
             ) as e:
                 logging.warning(f"Error: {e}")
-                self.undesirable_urls.add(self.service_params.substrate.url)
                 self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                     urls=self.service_params.ws_urls_relay,
                     ss58_format=self.service_params.ss58_format,
@@ -74,10 +74,10 @@ class Oracle:
                     undesirable_urls=self.undesirable_urls,
                 )
 
-        if self.last_era_reported == current_era.value['index']:
-            logger.info('CEI equals ORED: waiting for the next era')
+        if self.last_era_reported > current_era.value['index']:
+            logger.info('CEI less than ORED: waiting for the next era')
         else:
-            logger.info('CEI greater than ORED: create report for the current era')
+            logger.info('CEI equals or greater than ORED: create report for the current era')
 
         logger.info('Recovery mode is completed')
 
@@ -114,8 +114,8 @@ class Oracle:
                 logging.warning(f"Error: {e}")
                 raise e
 
-        if (era.value['index'] - 1) == self.last_era_reported:
-            logger.info('CEI equals ORED: waiting for the next era')
+        if era.value['index'] < self.last_era_reported:
+            logger.info('CEI less than ORED: waiting for the next era')
             return
 
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
@@ -138,7 +138,7 @@ class Oracle:
         logging.debug(';'.join([
             f"parachain_balance: {parachain_balance}",
             f"staking parameters: {staking_parameters}",
-            f"failure requests counter: {self.failure_requests_counter}",
+            f"failure requests counter: {self.failure_requests_count[self.service_params.substrate.url]}",
         ]))
 
         tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
@@ -282,15 +282,16 @@ class Oracle:
     def _sign_and_send_to_para(self, tx):
         """Sign transaction and send to parachain"""
         tx_signed = self.service_params.w3.eth.account.signTransaction(tx, private_key=self.priv_key)
-        self.failure_requests_counter += 1
+        self.failure_requests_count[self.service_params.substrate.url] += 1
         tx_hash = self.service_params.w3.eth.sendRawTransaction(tx_signed.rawTransaction)
         tx_receipt = self.service_params.w3.eth.waitForTransactionReceipt(tx_hash)
 
         if tx_receipt.status == 1:
             logging.debug(f"tx_hash: {tx_hash.hex()}")
             logger.info('The report was sent successfully. Resetting failure requests counter')
-            self.failure_requests_counter = 0
-            self.undesirable_urls.clear()
+            self.failure_requests_count[self.service_params.substrate.url] = 0
+            if self.service_params.substrate.url in self.undesirable_urls:
+                self.undesirable_urls.remove(self.service_params.substrate.url)
         else:
             logging.warning('Failed to send transaction')
             logging.debug(f"tx_receipt: {tx_receipt}")
