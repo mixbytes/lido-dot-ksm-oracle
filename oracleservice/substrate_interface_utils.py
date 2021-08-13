@@ -1,4 +1,5 @@
 from substrateinterface import Keypair, SubstrateInterface
+from websockets.exceptions import InvalidStatusCode
 
 import logging
 import time
@@ -44,8 +45,9 @@ class SubstrateInterfaceUtils:
                     substrate.update_type_registry_presets()
 
                 except (
-                    ValueError,
                     ConnectionRefusedError,
+                    InvalidStatusCode,
+                    ValueError,
                 ) as exc:
                     logging.warning(f"Failed to connect to {u}: {exc}")
 

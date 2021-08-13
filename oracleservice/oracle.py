@@ -114,7 +114,7 @@ class Oracle:
                 logging.warning(f"Error: {e}")
                 raise e
 
-        if era.value['index'] == self.last_era_reported:
+        if (era.value['index'] - 1) == self.last_era_reported:
             logger.info('CEI equals ORED: waiting for the next era')
             return
 
