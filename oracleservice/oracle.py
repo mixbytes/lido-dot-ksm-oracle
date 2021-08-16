@@ -277,7 +277,7 @@ class Oracle:
                ).functions.reportRelay(
                 era_id,
                 {'parachain_balance': parachain_balance, 'stake_ledger': staking_parameters},
-               ).buildTransaction({'gas': self.service_params.gas, 'nonce': nonce})
+               ).buildTransaction({'gas': self.service_params.gas_limit, 'nonce': nonce})
 
     def _sign_and_send_to_para(self, tx):
         """Sign transaction and send to parachain"""

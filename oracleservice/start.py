@@ -5,9 +5,9 @@ from service_parameters import ServiceParameters
 from substrateinterface import Keypair
 from substrateinterface.exceptions import BlockNotFound
 from substrate_interface_utils import SubstrateInterfaceUtils
-from utils import create_provider, get_abi
+from utils import check_contract_address, check_log_level, create_provider, get_abi, perform_sanity_checks, remove_invalid_urls
 from web3.exceptions import ABIFunctionNotFound, TimeExhausted
-from websockets.exceptions import ConnectionClosedError
+from websockets.exceptions import ConnectionClosedError, InvalidStatusCode
 
 import logging
 import os
@@ -23,50 +23,76 @@ DEFAULT_INITIAL_BLOCK_NUMBER = 1
 
 
 def main():
-    init_log(stdout_level=os.getenv('LOG_LEVEL_STDOUT', 'INFO'))
+    try:
+        log_level = os.getenv('LOG_LEVEL_STDOUT', 'INFO')
+        check_log_level(log_level)
+        init_log(stdout_level=log_level)
 
-    ws_url_relay = os.getenv('WS_URL_RELAY', 'ws://localhost:9951/').split(',')
-    ws_url_para = os.getenv('WS_URL_PARA', 'ws://localhost:10055/').split(',')
-    ss58_format = int(os.getenv('SS58_FORMAT', 2))
-    type_registry_preset = os.getenv('TYPE_REGISTRY_PRESET', 'kusama')
-    para_id = int(os.getenv('PARA_ID'))
+        ws_url_relay = os.getenv('WS_URL_RELAY', 'ws://localhost:9951/').split(',')
+        ws_url_para = os.getenv('WS_URL_PARA', 'ws://localhost:10055/').split(',')
+        ss58_format = int(os.getenv('SS58_FORMAT', 2))
+        type_registry_preset = os.getenv('TYPE_REGISTRY_PRESET', 'kusama')
+        para_id = int(os.getenv('PARA_ID'))
 
-    contract_address = os.getenv('CONTRACT_ADDRESS', None)
-    if contract_address is None:
-        sys.exit('No contract address provided')
+        contract_address = os.getenv('CONTRACT_ADDRESS', None)
+        if contract_address is None:
+            sys.exit('No contract address provided')
 
-    abi_path = os.getenv('ABI_PATH', 'oracleservice/abi.json')
-    abi = get_abi(abi_path)
+        abi_path = os.getenv('ABI_PATH', 'oracleservice/abi.json')
 
-    gas = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
-    max_number_of_failure_requests = int(os.getenv(
-        'MAX_NUMBER_OF_FAILURE_REQUESTS',
-        DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS,
-    ))
-    timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
+        gas_limit = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
+        max_number_of_failure_requests = int(os.getenv(
+            'MAX_NUMBER_OF_FAILURE_REQUESTS',
+            DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS,
+        ))
+        timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
 
-    era_duration = int(os.getenv('ERA_DURATION', DEFAULT_ERA_DURATION))
-    initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
+        era_duration = int(os.getenv('ERA_DURATION', DEFAULT_ERA_DURATION))
+        initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
 
-    w3 = create_provider(ws_url_para, timeout)
-    substrate = SubstrateInterfaceUtils.create_interface(ws_url_relay, ss58_format, type_registry_preset)
-    if substrate is None:
-        sys.exit('Failed to create substrate-interface')
+        stash = SubstrateInterfaceUtils.remove_invalid_ss58_addresses(ss58_format, (os.getenv('STASH_ACCOUNTS').split(',')))
+        stash_accounts = [Keypair(ss58_address=acc, ss58_format=ss58_format).public_key for acc in stash]
 
-    stash = os.getenv('STASH_ACCOUNTS').split(',')
-    stash_accounts = [Keypair(ss58_address=acc, ss58_format=ss58_format).public_key for acc in stash]
-    if stash_accounts is None:
-        sys.exit('Failed to parse stash accounts list')
+        oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
+        if oracle_private_key is None:
+            sys.exit('Failed to parse oracle private key')
 
-    oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
-    if oracle_private_key is None:
-        sys.exit('Failed to parse oracle private key')
+        perform_sanity_checks(
+            abi_path=abi_path,
+            contract_address=contract_address,
+            era_duration=era_duration,
+            gas_limit=gas_limit,
+            initial_block_number=initial_block_number,
+            max_number_of_failure_requests=max_number_of_failure_requests,
+            para_id=para_id,
+            private_key=oracle_private_key,
+            timeout=timeout,
+            ws_url_para=ws_url_para,
+            ws_url_relay=ws_url_relay,
+        )
+
+        abi = get_abi(abi_path)
+        ws_url_para = remove_invalid_urls(ws_url_para)
+        ws_url_relay = remove_invalid_urls(ws_url_relay)
+
+        w3 = create_provider(ws_url_para, timeout)
+        substrate = SubstrateInterfaceUtils.create_interface(ws_url_relay, ss58_format, type_registry_preset)
+        if substrate is None:
+            sys.exit('Failed to create substrate-interface')
+
+        check_contract_address(w3, contract_address)
+
+    except (
+        FileNotFoundError,
+        ValueError,
+    ) as e:
+        sys.exit(e)
 
     service_params = ServiceParameters(
         abi=abi,
         contract_address=contract_address,
         era_duration=era_duration,
-        gas=gas,
+        gas_limit=gas_limit,
         initial_block_number=initial_block_number,
         max_number_of_failure_requests=max_number_of_failure_requests,
         para_id=para_id,
@@ -86,13 +112,17 @@ def main():
         try:
             oracle.start_default_mode()
 
-        except ABIFunctionNotFound as exc:
+        except (
+            ABIFunctionNotFound,
+            AssertionError,
+        ) as exc:
             sys.exit(f"Error: {exc}")
 
         except (
             BlockNotFound,
             ConnectionClosedError,
             ConnectionRefusedError,
+            InvalidStatusCode,
             TimeExhausted,
             ValueError,
         ) as exc:

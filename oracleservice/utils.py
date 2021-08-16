@@ -1,12 +1,32 @@
+from os.path import exists
 from websocket._exceptions import WebSocketAddressException
 from web3 import Web3
+from web3.auto import w3
 
 import json
 import logging
 import time
+import urllib
 
 
 logger = logging.getLogger(__name__)
+
+LOG_LEVELS = (
+    'DEBUG',
+    'INFO',
+    'WARNING',
+    'ERROR',
+    'CRITICAL',
+)
+
+NON_NEGATIVE_PARAMETERS = (
+    'ERA_DURATION',
+    'GAS_LIMIT',
+    'INITIAL_BLOCK_NUMBER',
+    'MAX_NUMBER_OF_FAILURE_REQUESTS',
+    'PARA_ID',
+    'TIMEOUT',
+)
 
 
 def create_provider(urls: list, timeout: int = 60) -> Web3:
@@ -47,3 +67,73 @@ def get_abi(abi_path):
     """Get ABI from file"""
     with open(abi_path, 'r') as f:
         return json.load(f)
+
+
+def check_contract_address(w3: Web3, contract_addr: str):
+    """Check whether the correct contract address is provided"""
+    contract_code = w3.eth.get_code(contract_addr)
+    if len(contract_code) < 2:
+        raise ValueError('Incorrect contract address')
+
+
+def check_log_level(log_level: str):
+    """Check the logger level based on the default list"""
+    if log_level not in LOG_LEVELS:
+        raise ValueError(f"Valid 'LOG_LEVEL_STDOUT' values: {LOG_LEVELS}")
+
+
+def remove_invalid_urls(urls: [str]) -> [str]:
+    """Remove invalid urls from the list"""
+    checked_urls = []
+
+    for url in urls:
+        parsed_url = urllib.parse.urlparse(url)
+        try:
+            assert parsed_url.scheme == "ws"
+            assert parsed_url.params == ""
+            assert parsed_url.fragment == ""
+            assert parsed_url.hostname is not None
+
+            checked_urls.append(url)
+        except AssertionError:
+            logger.warning(f"Invalid url '{url}' removed from list")
+
+    return checked_urls
+
+
+def perform_sanity_checks(
+    abi_path: str,
+    contract_address: str,
+    era_duration: int,
+    gas_limit: int,
+    initial_block_number: int,
+    max_number_of_failure_requests: int,
+    para_id: int,
+    private_key: str,
+    timeout: int,
+    ws_url_relay: [str],
+    ws_url_para: [str],
+        ):
+    """Check the parameters passed to the Oracle"""
+    try:
+        assert era_duration > 0
+        assert initial_block_number >= 0
+        assert timeout >= 0
+        assert gas_limit > 0
+        assert max_number_of_failure_requests >= 0
+        assert para_id >= 0
+
+    except AssertionError:
+        raise ValueError(f"The following parameters must be non-negative: {NON_NEGATIVE_PARAMETERS}")
+
+    if not exists(abi_path):
+        raise FileNotFoundError(f"The file with the ABI was not found: {abi_path}")
+
+    # Check private key. Throws an exception if the length is not 32 bytes
+    w3.eth.account.from_key(private_key)
+
+    if not len(remove_invalid_urls(ws_url_relay)):
+        raise ValueError("No valid 'WS_URL_RELAY' values found")
+
+    if not len(remove_invalid_urls(ws_url_para)):
+        raise ValueError("No valid 'WS_URL_PARA' values found")
