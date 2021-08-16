@@ -1,2 +1,2 @@
-substrate-interface
-web3
+substrate-interface==0.13.12
+web3==5.23.0
