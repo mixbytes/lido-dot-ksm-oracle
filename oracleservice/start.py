@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+from functools import partial
 from log import init_log
 from oracle import Oracle
 from service_parameters import ServiceParameters
-from substrateinterface import Keypair
+from substrateinterface import Keypair, SubstrateInterface
 from substrateinterface.exceptions import BlockNotFound
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import check_contract_address, check_log_level, create_provider, get_abi, perform_sanity_checks, remove_invalid_urls
@@ -11,6 +12,7 @@ from websockets.exceptions import ConnectionClosedError, InvalidStatusCode
 
 import logging
 import os
+import signal
 import sys
 
 logger = logging.getLogger(__name__)
@@ -20,6 +22,16 @@ DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
 DEFAULT_TIMEOUT = 60
 DEFAULT_ERA_DURATION = 30
 DEFAULT_INITIAL_BLOCK_NUMBER = 1
+
+
+def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None):
+    logger.debug(f"Receiving signal: {sig}")
+    if substrate is not None:
+        logger.debug('Closing substrate interface websocket connection')
+        substrate.websocket.shutdown()
+        logger.debug('Connection closed')
+
+    sys.exit()
 
 
 def main():
@@ -34,7 +46,7 @@ def main():
         type_registry_preset = os.getenv('TYPE_REGISTRY_PRESET', 'kusama')
         para_id = int(os.getenv('PARA_ID'))
 
-        contract_address = os.getenv('CONTRACT_ADDRESS', None)
+        contract_address = os.getenv('CONTRACT_ADDRESS')
         if contract_address is None:
             sys.exit('No contract address provided')
 
@@ -77,16 +89,20 @@ def main():
 
         w3 = create_provider(ws_url_para, timeout)
         substrate = SubstrateInterfaceUtils.create_interface(ws_url_relay, ss58_format, type_registry_preset)
-        if substrate is None:
-            sys.exit('Failed to create substrate-interface')
+
+        signal.signal(signal.SIGTERM, partial(stop_signal_handler, substrate=substrate))
+        signal.signal(signal.SIGINT, partial(stop_signal_handler, substrate=substrate))
 
         check_contract_address(w3, contract_address)
 
     except (
         FileNotFoundError,
         ValueError,
-    ) as e:
-        sys.exit(e)
+    ) as exc:
+        sys.exit(exc)
+
+    except KeyboardInterrupt:
+        sys.exit()
 
     service_params = ServiceParameters(
         abi=abi,
