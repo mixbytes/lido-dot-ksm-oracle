@@ -66,7 +66,7 @@ class SubstrateInterfaceUtils:
             logger.info(f"Timeout: {timeout} seconds")
             time.sleep(timeout)
 
-    def get_parachain_balance(substrate: SubstrateInterface, para_id: int = 1000, block_hash: str = None):
+    def get_parachain_balance(substrate: SubstrateInterface, para_id: int = 1000, block_hash: str = None) -> int:
         """Get parachain balance using parachain id"""
         if not block_hash:
             block_hash = substrate.get_chain_head()
@@ -98,7 +98,7 @@ class SubstrateInterfaceUtils:
             storage_function='ActiveEra',
         )
 
-    def get_parachain_address(_para_id: int, ss58_format: int):
+    def get_parachain_address(_para_id: int, ss58_format: int) -> Keypair:
         """Get parachain address using parachain id with ss58 format provided"""
         prefix = b'para'
         para_addr = bytearray(prefix)
@@ -110,7 +110,7 @@ class SubstrateInterfaceUtils:
 
         return Keypair(public_key=para_addr.ljust(32, b'\0').hex(), ss58_format=ss58_format)
 
-    def remove_invalid_ss58_addresses(ss58_format, addresses: [str]):
+    def remove_invalid_ss58_addresses(ss58_format, addresses: [str]) -> [str]:
         """Check if given value is a valid SS58 formatted address"""
         checked_addresses = []
 

@@ -6,7 +6,8 @@ from service_parameters import ServiceParameters
 from substrateinterface import Keypair, SubstrateInterface
 from substrateinterface.exceptions import BlockNotFound
 from substrate_interface_utils import SubstrateInterfaceUtils
-from utils import check_contract_address, check_log_level, create_provider, get_abi, perform_sanity_checks, remove_invalid_urls
+from utils import create_provider, get_abi, remove_invalid_urls
+from utils import check_abi, check_contract_address, check_log_level, perform_sanity_checks
 from web3.exceptions import ABIFunctionNotFound, TimeExhausted
 from websockets.exceptions import ConnectionClosedError
 
@@ -95,8 +96,10 @@ def main():
         signal.signal(signal.SIGINT, partial(stop_signal_handler, substrate=substrate))
 
         check_contract_address(w3, contract_address)
+        check_abi(w3, contract_address, abi)
 
     except (
+        ABIFunctionNotFound,
         FileNotFoundError,
         ValueError,
     ) as exc:

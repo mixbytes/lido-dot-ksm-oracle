@@ -1,7 +1,8 @@
 from os.path import exists
-from websocket._exceptions import WebSocketAddressException
 from web3 import Web3
 from web3.auto import w3
+from web3.exceptions import ABIFunctionNotFound
+from websocket._exceptions import WebSocketAddressException
 
 import json
 import logging
@@ -63,7 +64,7 @@ def create_provider(urls: list, timeout: int = 60) -> Web3:
         time.sleep(timeout)
 
 
-def get_abi(abi_path):
+def get_abi(abi_path: str) -> list:
     """Get ABI from file"""
     with open(abi_path, 'r') as f:
         return json.load(f)
@@ -74,6 +75,18 @@ def check_contract_address(w3: Web3, contract_addr: str):
     contract_code = w3.eth.get_code(contract_addr)
     if len(contract_code) < 3:
         raise ValueError("Incorrect contract address or the contract is not deployed")
+
+
+def check_abi(w3: Web3, contract_addr: str, abi: list):
+    contract = w3.eth.contract(address=contract_addr, abi=abi)
+    try:
+        if not hasattr(contract.functions, 'reportRelay'):
+            raise ABIFunctionNotFound("The contract does not contain the 'reportRelay' function")
+
+        contract.functions.reportRelay(0, {'parachainBalance': 0, 'stakeLedger': []}).call()
+
+    except ValueError:
+        pass
 
 
 def check_log_level(log_level: str):
@@ -113,7 +126,7 @@ def perform_sanity_checks(
     timeout: int,
     ws_url_relay: [str],
     ws_url_para: [str],
-        ):
+):
     """Check the parameters passed to the Oracle"""
     try:
         assert era_duration > 0
