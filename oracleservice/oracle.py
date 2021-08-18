@@ -193,12 +193,12 @@ class Oracle:
             staking_parameters.append({
                 'stash': stash_addr,
                 'controller': controller_addr,
-                'stake_status': stash_statuses[controller_info.value['stash']],
-                'active_balance': controller_info.value['active'],
-                'total_balance': controller_info.value['total'],
+                'stakeStatus': stash_statuses[controller_info.value['stash']],
+                'activeBalance': controller_info.value['active'],
+                'totalBalance': controller_info.value['total'],
                 'unlocking': unlocking_values,
-                'claimed_rewards': controller_info.value['claimedRewards'],
-                'stash_balance': stash_balances[stash_addr],
+                'claimedRewards': controller_info.value['claimedRewards'],
+                'stashBalance': stash_balances[stash_addr],
             })
 
         staking_parameters.sort(key=lambda e: e['stash'])
@@ -277,7 +277,7 @@ class Oracle:
                 abi=self.service_params.abi
                ).functions.reportRelay(
                 era_id,
-                {'parachain_balance': parachain_balance, 'stake_ledger': staking_parameters},
+                {'parachainBalance': parachain_balance, 'stakeLedger': staking_parameters},
                ).buildTransaction({'gas': self.service_params.gas_limit, 'nonce': nonce})
 
     def _sign_and_send_to_para(self, tx):
