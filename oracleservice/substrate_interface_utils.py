@@ -23,17 +23,17 @@ class SubstrateInterfaceUtils:
         tried_all = False
 
         if ss58_format not in SS58_FORMATS:
-            logging.error("Invalid SS58 format")
+            logger.error("Invalid SS58 format")
             raise ValueError("Invalid SS58 format")
 
         while True:
             for url in urls:
                 if url in undesirable_urls and not tried_all:
-                    logging.info(f"Skipping undesirable url: {url}")
+                    logger.info(f"Skipping undesirable url: {url}")
                     continue
 
                 if not url.startswith('ws'):
-                    logging.warning(f"Unsupported ws provider: {url}")
+                    logger.warning(f"Unsupported ws provider: {url}")
                     continue
 
                 try:
@@ -51,18 +51,18 @@ class SubstrateInterfaceUtils:
                     ValueError,
                     WebSocketAddressException,
                 ) as exc:
-                    logging.warning(f"Failed to connect to {url}: {exc}")
+                    logger.warning(f"Failed to connect to {url}: {exc}")
                     if isinstance(exc.args[0], str) and exc.args[0].find("Unsupported type registry preset") != -1:
                         raise ValueError(exc.args[0])
 
                 else:
-                    logging.info(f"The connection was made at the address: {url}")
+                    logger.info(f"The connection was made at the address: {url}")
 
                     return substrate
 
             tried_all = True
 
-            logging.error('Failed to connect to any node')
+            logger.error("Failed to connect to any node")
             logger.info(f"Timeout: {timeout} seconds")
             time.sleep(timeout)
 
@@ -79,7 +79,7 @@ class SubstrateInterfaceUtils:
         )
 
         if result is None:
-            logging.warning(f"{para_id} is gone")
+            logger.warning(f"{para_id} is gone")
             return 0
 
         return result.value['data']['free']
@@ -121,6 +121,6 @@ class SubstrateInterfaceUtils:
                 logger.warning(f"Invalid address {addr} removed from the list")
 
         if not len(checked_addresses):
-            raise ValueError('No valid ss58 addresses founded or ss58 format is invalid')
+            raise ValueError("No valid ss58 addresses founded or ss58 format is invalid")
 
         return checked_addresses

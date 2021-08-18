@@ -25,11 +25,12 @@ DEFAULT_INITIAL_BLOCK_NUMBER = 1
 
 
 def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None):
+    """Handle signal, close substrate interface websocket connection, if it is open, and terminate the process"""
     logger.debug(f"Receiving signal: {sig}")
     if substrate is not None:
-        logger.debug('Closing substrate interface websocket connection')
+        logger.debug("Closing substrate interface websocket connection")
         substrate.websocket.shutdown()
-        logger.debug('Connection closed')
+        logger.debug("Connection closed")
 
     sys.exit()
 
@@ -48,7 +49,7 @@ def main():
 
         contract_address = os.getenv('CONTRACT_ADDRESS')
         if contract_address is None:
-            sys.exit('No contract address provided')
+            sys.exit("No contract address provided")
 
         abi_path = os.getenv('ABI_PATH', 'oracleservice/abi.json')
 
@@ -67,7 +68,7 @@ def main():
 
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
         if oracle_private_key is None:
-            sys.exit('Failed to parse oracle private key')
+            sys.exit("Failed to parse oracle private key")
 
         perform_sanity_checks(
             abi_path=abi_path,
@@ -142,9 +143,9 @@ def main():
             TimeExhausted,
             ValueError,
         ) as exc:
-            logging.warning(f"Error: {exc}")
+            logger.warning(f"Error: {exc}")
             oracle.start_recovery_mode()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

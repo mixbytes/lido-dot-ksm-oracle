@@ -28,9 +28,9 @@ class Oracle:
         if not self.default_mode_started:
             self.default_mode_started = True
         else:
-            logging.warning('The default oracle mode is already working')
+            logger.warning("The default oracle mode is already working")
 
-        logger.info('Starting default mode')
+        logger.info("Starting default mode")
         self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
         self.failure_requests_count[self.service_params.substrate.url] = 0
         self._start_era_monitoring()
@@ -43,7 +43,7 @@ class Oracle:
         If failure requests counter exceeds the allowed value, reconnect to another
         node.
         '''
-        logger.info('Starting recovery mode')
+        logger.info("Starting recovery mode")
         self.default_mode_started = False
 
         if self.failure_requests_count[self.service_params.substrate.url] > self.service_params.max_number_of_failure_requests:
@@ -65,7 +65,7 @@ class Oracle:
                 ConnectionRefusedError,
                 WebSocketConnectionClosedException,
             ) as e:
-                logging.warning(f"Error: {e}")
+                logger.warning(f"Error: {e}")
                 self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                     urls=self.service_params.ws_urls_relay,
                     ss58_format=self.service_params.ss58_format,
@@ -75,11 +75,11 @@ class Oracle:
                 )
 
         if self.last_era_reported > current_era.value['index']:
-            logger.info('CEI less than ORED: waiting for the next era')
+            logger.info("CEI less than ORED: waiting for the next era")
         else:
-            logger.info('CEI equals or greater than ORED: create report for the current era')
+            logger.info("CEI equals or greater than ORED: create report for the current era")
 
-        logger.info('Recovery mode is completed')
+        logger.info("Recovery mode is completed")
 
     def _get_oracle_report_era(self):
         # TODO update SC function signature
@@ -111,17 +111,17 @@ class Oracle:
                 ConnectionRefusedError,
                 WebSocketConnectionClosedException,
             ) as e:
-                logging.warning(f"Error: {e}")
+                logger.warning(f"Error: {e}")
                 raise e
 
         if era.value['index'] < self.last_era_reported:
-            logger.info('CEI less than ORED: waiting for the next era')
+            logger.info("CEI less than ORED: waiting for the next era")
             return
 
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
         block_hash = self._find_start_block(era.value['index'])
         if block_hash is None:
-            logging.warning("Can't find the required block")
+            logger.error("Can't find the required block")
             return
         logger.info(f"Block hash: {block_hash}")
 
@@ -132,10 +132,11 @@ class Oracle:
         )
         staking_parameters = self._read_staking_parameters(block_hash)
         if not staking_parameters:
-            logging.warning('No staking parameters found')
+            logger.warning("No staking parameters found")
             return
 
-        logging.debug(';'.join([
+        logger.debug(';'.join([
+            f"era: {era.value['index'] - 1}",
             f"parachain_balance: {parachain_balance}",
             f"staking parameters: {staking_parameters}",
             f"failure requests counter: {self.failure_requests_count[self.service_params.substrate.url]}",
@@ -143,7 +144,7 @@ class Oracle:
 
         tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
         self._sign_and_send_to_para(tx)
-        logger.info('Waiting for the next era')
+        logger.info("Waiting for the next era")
 
     def _find_start_block(self, era_id):
         """Find the hash of the block at which the era change occurs"""
@@ -287,11 +288,11 @@ class Oracle:
         tx_receipt = self.service_params.w3.eth.waitForTransactionReceipt(tx_hash)
 
         if tx_receipt.status == 1:
-            logging.debug(f"tx_hash: {tx_hash.hex()}")
-            logger.info('The report was sent successfully. Resetting failure requests counter')
+            logger.debug(f"tx_hash: {tx_hash.hex()}")
+            logger.info("The report was sent successfully. Resetting failure requests counter")
             self.failure_requests_count[self.service_params.substrate.url] = 0
             if self.service_params.substrate.url in self.undesirable_urls:
                 self.undesirable_urls.remove(self.service_params.substrate.url)
         else:
-            logging.warning('Failed to send transaction')
-            logging.debug(f"tx_receipt: {tx_receipt}")
+            logger.warning("Failed to send transaction")
+            logger.debug(f"tx_receipt: {tx_receipt}")

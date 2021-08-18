@@ -36,7 +36,7 @@ def create_provider(urls: list, timeout: int = 60) -> Web3:
     while True:
         for url in urls:
             if not url.startswith('ws'):
-                logging.warning(f"Unsupported ws provider: {url}")
+                logger.warning(f"Unsupported ws provider: {url}")
                 continue
 
             try:
@@ -49,16 +49,16 @@ def create_provider(urls: list, timeout: int = 60) -> Web3:
                 ValueError,
                 WebSocketAddressException,
             ) as exc:
-                logging.warning(f"Failed to connect to {url}: {exc}")
+                logger.warning(f"Failed to connect to {url}: {exc}")
 
             except ConnectionRefusedError:
-                logging.warning(f"Failed to connect to {url}: provider is not connected")
+                logger.warning(f"Failed to connect to {url}: provider is not connected")
 
             else:
                 logger.info(f"Successfully connected to {url}")
                 return w3
 
-        logging.error('Failed to connect to any node')
+        logger.error("Failed to connect to any node")
         logger.info(f"Timeout: {timeout} seconds")
         time.sleep(timeout)
 
@@ -72,8 +72,8 @@ def get_abi(abi_path):
 def check_contract_address(w3: Web3, contract_addr: str):
     """Check whether the correct contract address is provided"""
     contract_code = w3.eth.get_code(contract_addr)
-    if len(contract_code) < 2:
-        raise ValueError('Incorrect contract address')
+    if len(contract_code) < 3:
+        raise ValueError("Incorrect contract address or the contract is not deployed")
 
 
 def check_log_level(log_level: str):
