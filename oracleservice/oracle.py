@@ -3,7 +3,9 @@ from service_parameters import ServiceParameters
 from substrateinterface.exceptions import SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
 from substrate_interface_utils import SubstrateInterfaceUtils
+from web3.exceptions import BadFunctionCallOutput
 from websocket._exceptions import WebSocketConnectionClosedException
+from websockets.exceptions import ConnectionClosedError
 
 import logging
 
@@ -19,7 +21,7 @@ class Oracle:
 
     account = None
     default_mode_started: bool = False
-    failure_requests_count: dict = field(default_factory=dict)
+    failure_reqs_count: dict = field(default_factory=dict)
     last_era_reported: int = -1
     undesirable_urls: set = field(default_factory=set)
 
@@ -32,40 +34,42 @@ class Oracle:
 
         logger.info("Starting default mode")
         self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
-        self.failure_requests_count[self.service_params.substrate.url] = 0
+        self.failure_reqs_count[self.service_params.substrate.url] = 0
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
         '''
         Start of the Oracle recovery mode.
         The current era id (CEI) from relay chain and oracle report era id (ORED)
-        from parachain are being compared. If CEI equals ORED, then do not send a report.
-        If failure requests counter exceeds the allowed value, reconnect to another
-        node.
+        from parachain are being compared. If CEI less than ORED, then do not send a report.
+        If failure requests counter exceeds the allowed value, reconnect to another node.
         '''
         logger.info("Starting recovery mode")
         self.default_mode_started = False
 
-        if self.failure_requests_count[self.service_params.substrate.url] > self.service_params.max_number_of_failure_requests:
-            self.undesirable_urls.add(self.service_params.substrate.url)
-            self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
-                urls=self.service_params.ws_urls_relay,
-                ss58_format=self.service_params.ss58_format,
-                type_registry_preset=self.service_params.type_registry_preset,
-                timeout=self.service_params.timeout,
-                undesirable_urls=self.undesirable_urls,
-            )
-
         while True:
             try:
+                if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_num_of_failure_reqs:
+                    self.undesirable_urls.add(self.service_params.substrate.url)
+                    self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
+                        urls=self.service_params.ws_urls_relay,
+                        ss58_format=self.service_params.ss58_format,
+                        type_registry_preset=self.service_params.type_registry_preset,
+                        timeout=self.service_params.timeout,
+                        undesirable_urls=self.undesirable_urls,
+                    )
+
                 current_era = SubstrateInterfaceUtils.get_active_era(self.service_params.substrate)
                 self.last_era_reported = self._get_oracle_report_era()
                 break
+
             except (
+                BadFunctionCallOutput,
+                ConnectionClosedError,
                 ConnectionRefusedError,
                 WebSocketConnectionClosedException,
-            ) as e:
-                logger.warning(f"Error: {e}")
+            ) as exc:
+                logger.warning(f"Error: {exc}")
                 self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                     urls=self.service_params.ws_urls_relay,
                     ss58_format=self.service_params.ss58_format,
@@ -82,15 +86,10 @@ class Oracle:
         logger.info("Recovery mode is completed")
 
     def _get_oracle_report_era(self):
-        # TODO update SC function signature
-        '''
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
                ).functions.ORED().call()
-        '''
-        # TODO remove
-        return 0
 
     def _start_era_monitoring(self):
         self.service_params.substrate.query(
@@ -114,11 +113,12 @@ class Oracle:
                 logger.warning(f"Error: {e}")
                 raise e
 
+        logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
+
         if era.value['index'] < self.last_era_reported:
             logger.info("CEI less than ORED: waiting for the next era")
             return
 
-        logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
         block_hash = self._find_start_block(era.value['index'])
         if block_hash is None:
             logger.error("Can't find the required block")
@@ -139,7 +139,7 @@ class Oracle:
             f"era: {era.value['index'] - 1}",
             f"parachain_balance: {parachain_balance}",
             f"staking parameters: {staking_parameters}",
-            f"failure requests counter: {self.failure_requests_count[self.service_params.substrate.url]}",
+            f"failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
         ]))
 
         tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
@@ -200,6 +200,8 @@ class Oracle:
                 'claimedRewards': controller_info.value['claimedRewards'],
                 'stashBalance': stash_balances[stash_addr],
             })
+
+        staking_parameters = self._add_not_founded_stashes(staking_parameters, stash_balances)
 
         staking_parameters.sort(key=lambda e: e['stash'])
         return staking_parameters
@@ -268,6 +270,25 @@ class Oracle:
 
         return statuses
 
+    def _add_not_founded_stashes(self, staking_parameters: list, stash_balances: dict) -> list:
+        staking_params_set = set(staking_parameters)
+        for stash in self.service_params.stash_accounts:
+            if stash in staking_params_set:
+                continue
+
+            staking_parameters.append({
+                'stash': stash,
+                'controller': '',
+                'stakeStatus': 0,
+                'activeBalance': 0,
+                'totalBalance': 0,
+                'unlocking': [],
+                'claimedRewards': [],
+                'stashBalance': stash_balances[stash],
+            })
+
+        return staking_parameters
+
     def _create_tx(self, era_id, parachain_balance, staking_parameters):
         """Create a transaction body using the staking parameters, era id and parachain balance"""
         nonce = self.service_params.w3.eth.getTransactionCount(self.account.address)
@@ -283,14 +304,14 @@ class Oracle:
     def _sign_and_send_to_para(self, tx):
         """Sign transaction and send to parachain"""
         tx_signed = self.service_params.w3.eth.account.signTransaction(tx, private_key=self.priv_key)
-        self.failure_requests_count[self.service_params.substrate.url] += 1
+        self.failure_reqs_count[self.service_params.substrate.url] += 1
         tx_hash = self.service_params.w3.eth.sendRawTransaction(tx_signed.rawTransaction)
         tx_receipt = self.service_params.w3.eth.waitForTransactionReceipt(tx_hash)
 
         if tx_receipt.status == 1:
             logger.debug(f"tx_hash: {tx_hash.hex()}")
             logger.info("The report was sent successfully. Resetting failure requests counter")
-            self.failure_requests_count[self.service_params.substrate.url] = 0
+            self.failure_reqs_count[self.service_params.substrate.url] = 0
             if self.service_params.substrate.url in self.undesirable_urls:
                 self.undesirable_urls.remove(self.service_params.substrate.url)
         else:

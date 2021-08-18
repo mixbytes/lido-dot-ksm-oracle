@@ -8,7 +8,7 @@ from substrateinterface.exceptions import BlockNotFound
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import check_contract_address, check_log_level, create_provider, get_abi, perform_sanity_checks, remove_invalid_urls
 from web3.exceptions import ABIFunctionNotFound, TimeExhausted
-from websockets.exceptions import ConnectionClosedError, InvalidStatusCode
+from websockets.exceptions import ConnectionClosedError
 
 import logging
 import os
@@ -111,7 +111,7 @@ def main():
         era_duration=era_duration,
         gas_limit=gas_limit,
         initial_block_number=initial_block_number,
-        max_number_of_failure_requests=max_number_of_failure_requests,
+        max_num_of_failure_reqs=max_number_of_failure_requests,
         para_id=para_id,
         stash_accounts=stash_accounts,
         ss58_format=ss58_format,
@@ -139,7 +139,7 @@ def main():
             BlockNotFound,
             ConnectionClosedError,
             ConnectionRefusedError,
-            InvalidStatusCode,
+            KeyError,
             TimeExhausted,
             ValueError,
         ) as exc:
