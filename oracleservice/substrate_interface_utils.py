@@ -1,4 +1,7 @@
 from substrateinterface import Keypair, SubstrateInterface
+from substrateinterface.utils.ss58 import is_valid_ss58_address
+from websocket._exceptions import WebSocketAddressException
+from websockets.exceptions import InvalidStatusCode
 
 import logging
 import time
@@ -20,23 +23,22 @@ class SubstrateInterfaceUtils:
         tried_all = False
 
         if ss58_format not in SS58_FORMATS:
-            logging.error("Invalid SS58 format")
-
-            return substrate
+            logger.error("Invalid SS58 format")
+            raise ValueError("Invalid SS58 format")
 
         while True:
-            for u in urls:
-                if u in undesirable_urls and not tried_all:
-                    logging.info(f"Skipping undesirable url: {u}")
+            for url in urls:
+                if url in undesirable_urls and not tried_all:
+                    logger.info(f"Skipping undesirable url: {url}")
                     continue
 
-                if not u.startswith('ws'):
-                    logging.warning(f"Unsupported ws provider: {u}")
+                if not url.startswith('ws'):
+                    logger.warning(f"Unsupported ws provider: {url}")
                     continue
 
                 try:
                     substrate = SubstrateInterface(
-                        url=u,
+                        url=url,
                         ss58_format=ss58_format,
                         type_registry_preset=type_registry_preset,
                     )
@@ -44,23 +46,27 @@ class SubstrateInterfaceUtils:
                     substrate.update_type_registry_presets()
 
                 except (
-                    ValueError,
                     ConnectionRefusedError,
+                    InvalidStatusCode,
+                    ValueError,
+                    WebSocketAddressException,
                 ) as exc:
-                    logging.warning(f"Failed to connect to {u}: {exc}")
+                    logger.warning(f"Failed to connect to {url}: {exc}")
+                    if isinstance(exc.args[0], str) and exc.args[0].find("Unsupported type registry preset") != -1:
+                        raise ValueError(exc.args[0])
 
                 else:
-                    logging.info(f"The connection was made at the address: {u}")
+                    logger.info(f"The connection was made at the address: {url}")
 
                     return substrate
 
             tried_all = True
 
-            logging.error('Failed to connect to any node')
+            logger.error("Failed to connect to any node")
             logger.info(f"Timeout: {timeout} seconds")
             time.sleep(timeout)
 
-    def get_parachain_balance(substrate: SubstrateInterface, para_id: int = 1000, block_hash: str = None):
+    def get_parachain_balance(substrate: SubstrateInterface, para_id: int = 1000, block_hash: str = None) -> int:
         """Get parachain balance using parachain id"""
         if not block_hash:
             block_hash = substrate.get_chain_head()
@@ -73,7 +79,7 @@ class SubstrateInterfaceUtils:
         )
 
         if result is None:
-            logging.warning(f"{para_id} is gone")
+            logger.warning(f"{para_id} is gone")
             return 0
 
         return result.value['data']['free']
@@ -92,7 +98,7 @@ class SubstrateInterfaceUtils:
             storage_function='ActiveEra',
         )
 
-    def get_parachain_address(_para_id: int, ss58_format: int):
+    def get_parachain_address(_para_id: int, ss58_format: int) -> Keypair:
         """Get parachain address using parachain id with ss58 format provided"""
         prefix = b'para'
         para_addr = bytearray(prefix)
@@ -103,3 +109,18 @@ class SubstrateInterfaceUtils:
         para_addr.append(_para_id & 0xFF)
 
         return Keypair(public_key=para_addr.ljust(32, b'\0').hex(), ss58_format=ss58_format)
+
+    def remove_invalid_ss58_addresses(ss58_format, addresses: [str]) -> [str]:
+        """Check if given value is a valid SS58 formatted address"""
+        checked_addresses = []
+
+        for addr in addresses:
+            if is_valid_ss58_address(addr, ss58_format):
+                checked_addresses.append(addr)
+            else:
+                logger.warning(f"Invalid address {addr} removed from the list")
+
+        if not len(checked_addresses):
+            raise ValueError("No valid ss58 addresses founded or ss58 format is invalid")
+
+        return checked_addresses

@@ -7,12 +7,12 @@ from web3.main import Web3
 class ServiceParameters:
     contract_address: str
     abi: list = field(default_factory=list)
-    gas: int = 10000000
+    gas_limit: int = 10000000
 
     era_duration: int = 30
     initial_block_number: int = 1
 
-    max_number_of_failure_requests: int = 10
+    max_num_of_failure_reqs: int = 10
     timeout: int = 60
 
     stash_accounts: list = field(default_factory=list)

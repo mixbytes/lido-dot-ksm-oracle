@@ -1,10 +1,13 @@
 from dataclasses import dataclass, field
 from prometheus_metrics import metrics_exporter
 from service_parameters import ServiceParameters
+from substrateinterface.base import QueryMapResult
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
 from substrate_interface_utils import SubstrateInterfaceUtils
+from web3.exceptions import BadFunctionCallOutput
 from websocket._exceptions import WebSocketConnectionClosedException
+from websockets.exceptions import ConnectionClosedError
 
 import logging
 import time
@@ -21,7 +24,7 @@ class Oracle:
 
     account = None
     default_mode_started: bool = False
-    failure_requests_counter: int = 0
+    failure_reqs_count: dict = field(default_factory=dict)
     last_era_reported: int = -1
     undesirable_urls: set = field(default_factory=set)
 
@@ -30,47 +33,31 @@ class Oracle:
         if not self.default_mode_started:
             self.default_mode_started = True
         else:
-            logging.warning('The default oracle mode is already working')
+            logger.warning("The default oracle mode is already working")
 
         logger.info('Starting default mode')
+
         metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
         with metrics_exporter.para_exceptions_count.count_exceptions():
             self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
+
+        self.failure_reqs_count[self.service_params.substrate.url] = 0
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
         '''
         Start of the Oracle recovery mode.
         The current era id (CEI) from relay chain and oracle report era id (ORED)
-        from parachain are being compared. If CEI equals ORED, then do not send a report.
-        If failure requests counter exceeds the allowed value, reconnect to another
-        node.
+        from parachain are being compared. If CEI less than ORED, then do not send a report.
+        If failure requests counter exceeds the allowed value, reconnect to another node.
         '''
-        logger.info('Starting recovery mode')
+        logger.info("Starting recovery mode")
         metrics_exporter.is_recovery_mode_active.set(True)
         self.default_mode_started = False
 
-        with metrics_exporter.relay_exceptions_count.count_exceptions():
-            if self.failure_requests_counter > self.service_params.max_number_of_failure_requests:
-                self.undesirable_urls.add(self.service_params.substrate.url)
-                self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
-                    urls=self.service_params.ws_urls_relay,
-                    ss58_format=self.service_params.ss58_format,
-                    type_registry_preset=self.service_params.type_registry_preset,
-                    timeout=self.service_params.timeout,
-                    undesirable_urls=self.undesirable_urls,
-                )
-
-            while True:
-                try:
-                    current_era = SubstrateInterfaceUtils.get_active_era(self.service_params.substrate)
-                    self.last_era_reported = self._get_oracle_report_era()
-                    break
-                except (
-                    ConnectionRefusedError,
-                    WebSocketConnectionClosedException,
-                ) as e:
-                    logging.warning(f"Error: {e}")
+        while True:
+            try:
+                if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_num_of_failure_reqs:
                     self.undesirable_urls.add(self.service_params.substrate.url)
                     self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                         urls=self.service_params.ws_urls_relay,
@@ -80,44 +67,44 @@ class Oracle:
                         undesirable_urls=self.undesirable_urls,
                     )
 
-            while True:
-                try:
-                    current_era = SubstrateInterfaceUtils.get_active_era(self.service_params.substrate)
-                    self.last_era_reported = self._get_oracle_report_era()
-                    break
-                except (
-                    ConnectionRefusedError,
-                    WebSocketConnectionClosedException,
-                ) as e:
-                    logging.warning(f"Error: {e}")
-                    self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
-                        urls=self.service_params.ws_urls_relay,
-                        ss58_format=self.service_params.ss58_format,
-                        type_registry_preset=self.service_params.type_registry_preset,
-                        timeout=self.service_params.timeout,
-                        undesirable_url=self.service_params.substrate.url,
-                    )
+                current_era = SubstrateInterfaceUtils.get_active_era(self.service_params.substrate)
+                self.last_era_reported = self._get_oracle_report_era()
+                break
+
+            except KeyError:
+                self.failure_reqs_count[self.service_params.substrate.url] = 0
+
+            except (
+                BadFunctionCallOutput,
+                ConnectionClosedError,
+                ConnectionRefusedError,
+                WebSocketConnectionClosedException,
+            ) as exc:
+                logger.warning(f"Error: {exc}")
+                self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
+                    urls=self.service_params.ws_urls_relay,
+                    ss58_format=self.service_params.ss58_format,
+                    type_registry_preset=self.service_params.type_registry_preset,
+                    timeout=self.service_params.timeout,
+                    undesirable_urls=self.undesirable_urls,
+                )
 
         metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
 
-        if self.last_era_reported == current_era.value['index']:
-            logger.info('CEI equals ORED: waiting for the next era')
+        logger.debug(f"ORED: {self.last_era_reported}")
+        if self.last_era_reported > current_era.value['index']:
+            logger.info("CEI less than ORED: waiting for the next era")
         else:
-            logger.info('CEI greater than ORED: create report for the current era')
+            logger.info("CEI equals or greater than ORED: create report for the current era")
 
         metrics_exporter.is_recovery_mode_active.set(False)
-        logger.info('Recovery mode is completed')
+        logger.info("Recovery mode is completed")
 
-    def _get_oracle_report_era(self):
-        # TODO update SC function signature
-        '''
+    def _get_oracle_report_era(self) -> int:
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
                ).functions.ORED().call()
-        '''
-        # TODO remove
-        return 0
 
     def _start_era_monitoring(self):
         self.service_params.substrate.query(
@@ -126,7 +113,7 @@ class Oracle:
             subscription_handler=self._handle_era_change,
         )
 
-    def _handle_era_change(self, era, update_nr, subscription_id):
+    def _handle_era_change(self, era, update_nr: int, subscription_id: str):
         '''
         Read the staking parameters from the block where the era value is changed,
         generate the transaction body, sign and send to the parachain.
@@ -139,20 +126,22 @@ class Oracle:
                 ConnectionRefusedError,
                 WebSocketConnectionClosedException,
             ) as exc:
-                logging.warning(f"Error: {exc}")
+                logger.warning(f"Error: {exc}")
                 raise exc
 
         metrics_exporter.last_era_reported.set(self.last_era_reported)
         metrics_exporter.active_era_id.set(era.value['index'])
-        if era.value['index'] == self.last_era_reported:
-            logger.info('CEI equals ORED: waiting for the next era')
-            return
 
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
+
+        if era.value['index'] < self.last_era_reported:
+            logger.info("CEI less than ORED: waiting for the next era")
+            return
+
         with metrics_exporter.relay_exceptions_count.count_exceptions():
             block_hash, block_number = self._find_start_block(era.value['index'])
             if block_hash is None:
-                logging.warning("Can't find the required block")
+                logger.error("Can't find the required block")
                 raise BlockNotFound
             logger.info(f"Block hash: {block_hash}")
             metrics_exporter.previous_era_change_block_number.set(block_number)
@@ -165,13 +154,14 @@ class Oracle:
             staking_parameters = self._read_staking_parameters(block_hash)
 
         if not staking_parameters:
-            logging.warning('No staking parameters found')
+            logger.warning("No staking parameters found")
             return
 
-        logging.debug(';'.join([
+        logger.debug(';'.join([
+            f"era: {era.value['index'] - 1}",
             f"parachain_balance: {parachain_balance}",
             f"staking parameters: {staking_parameters}",
-            f"failure requests counter: {self.failure_requests_counter}",
+            f"failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
         ]))
 
         with metrics_exporter.para_exceptions_count.count_exceptions():
@@ -179,9 +169,9 @@ class Oracle:
             self._sign_and_send_to_para(tx)
 
         metrics_exporter.time_elapsed_until_last_era_report.set(time.time())
-        logger.info('Waiting for the next era')
+        logger.info("Waiting for the next era")
 
-    def _find_start_block(self, era_id):
+    def _find_start_block(self, era_id: int) -> str:
         """Find the hash of the block at which the era change occurs"""
         block_number = era_id * self.service_params.era_duration + self.service_params.initial_block_number
 
@@ -190,7 +180,7 @@ class Oracle:
         except SubstrateRequestException:
             return None, None
 
-    def _read_staking_parameters(self, block_hash=None):
+    def _read_staking_parameters(self, block_hash=None) -> list:
         """Read staking parameters from specific block or from the head"""
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
@@ -229,18 +219,20 @@ class Oracle:
             staking_parameters.append({
                 'stash': stash_addr,
                 'controller': controller_addr,
-                'stake_status': stash_statuses[controller_info.value['stash']],
-                'active_balance': controller_info.value['active'],
-                'total_balance': controller_info.value['total'],
+                'stakeStatus': stash_statuses[controller_info.value['stash']],
+                'activeBalance': controller_info.value['active'],
+                'totalBalance': controller_info.value['total'],
                 'unlocking': unlocking_values,
-                'claimed_rewards': controller_info.value['claimedRewards'],
-                'stash_balance': stash_balances[stash_addr],
+                'claimedRewards': controller_info.value['claimedRewards'],
+                'stashBalance': stash_balances[stash_addr],
             })
+
+        staking_parameters = self._add_not_founded_stashes(staking_parameters, stash_balances)
 
         staking_parameters.sort(key=lambda e: e['stash'])
         return staking_parameters
 
-    def _get_ledger_data(self, block_hash):
+    def _get_ledger_data(self, block_hash: str) -> dict:
         """Get ledger data using stash accounts list"""
         ledger_data = {}
 
@@ -266,7 +258,7 @@ class Oracle:
 
         return ledger_data
 
-    def _get_stash_balances(self):
+    def _get_stash_balances(self) -> dict:
         """Get stash accounts free balances"""
         balances = {}
 
@@ -282,7 +274,7 @@ class Oracle:
 
         return balances
 
-    def _get_stash_statuses(self, controllers_, validators_, nominators_):
+    def _get_stash_statuses(self, controllers_: dict, validators_, nominators_: QueryMapResult) -> dict:
         '''
         Get stash accounts statuses.
         0 - Chill, 1 - Nominator, 2 - Validator
@@ -305,7 +297,27 @@ class Oracle:
 
         return statuses
 
-    def _create_tx(self, era_id, parachain_balance, staking_parameters):
+    def _add_not_founded_stashes(self, staking_parameters: list, stash_balances: dict) -> list:
+        """Add information about not founded stash accounts to the report"""
+        staking_params_set = set(staking_parameters)
+        for stash in self.service_params.stash_accounts:
+            if stash in staking_params_set:
+                continue
+
+            staking_parameters.append({
+                'stash': stash,
+                'controller': '',
+                'stakeStatus': 0,
+                'activeBalance': 0,
+                'totalBalance': 0,
+                'unlocking': [],
+                'claimedRewards': [],
+                'stashBalance': stash_balances[stash],
+            })
+
+        return staking_parameters
+
+    def _create_tx(self, era_id: int, parachain_balance: int, staking_parameters: list) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
         nonce = self.service_params.w3.eth.getTransactionCount(self.account.address)
 
@@ -314,23 +326,24 @@ class Oracle:
                 abi=self.service_params.abi
                ).functions.reportRelay(
                 era_id,
-                {'parachain_balance': parachain_balance, 'stake_ledger': staking_parameters},
-               ).buildTransaction({'gas': self.service_params.gas, 'nonce': nonce})
+                {'parachainBalance': parachain_balance, 'stakeLedger': staking_parameters},
+               ).buildTransaction({'gas': self.service_params.gas_limit, 'nonce': nonce})
 
-    def _sign_and_send_to_para(self, tx):
+    def _sign_and_send_to_para(self, tx: dict):
         """Sign transaction and send to parachain"""
         tx_signed = self.service_params.w3.eth.account.signTransaction(tx, private_key=self.priv_key)
-        self.failure_requests_counter += 1
+        self.failure_reqs_count[self.service_params.substrate.url] += 1
         tx_hash = self.service_params.w3.eth.sendRawTransaction(tx_signed.rawTransaction)
         tx_receipt = self.service_params.w3.eth.waitForTransactionReceipt(tx_hash)
 
         if tx_receipt.status == 1:
-            logging.debug(f"tx_hash: {tx_hash.hex()}")
-            logger.info('The report was sent successfully. Resetting failure requests counter')
+            logger.debug(f"tx_hash: {tx_hash.hex()}")
+            logger.info("The report was sent successfully. Resetting failure requests counter")
             metrics_exporter.tx_success.observe(1)
-            self.failure_requests_counter = 0
-            self.undesirable_urls.clear()
+            self.failure_reqs_count[self.service_params.substrate.url] = 0
+            if self.service_params.substrate.url in self.undesirable_urls:
+                self.undesirable_urls.remove(self.service_params.substrate.url)
         else:
-            logging.warning('Failed to send transaction')
-            logging.debug(f"tx_receipt: {tx_receipt}")
+            logger.warning("Failed to send transaction")
+            logger.debug(f"tx_receipt: {tx_receipt}")
             metrics_exporter.tx_revert.observe(1)
