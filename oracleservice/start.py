@@ -108,6 +108,7 @@ def main():
     except (
         ABIFunctionNotFound,
         FileNotFoundError,
+        OverflowError,
         ValueError,
     ) as exc:
         sys.exit(exc)
