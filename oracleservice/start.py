@@ -9,7 +9,8 @@ from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import create_provider, get_abi, remove_invalid_urls
 from utils import check_abi, check_contract_address, check_log_level, perform_sanity_checks
 from web3.exceptions import ABIFunctionNotFound, TimeExhausted
-from websockets.exceptions import ConnectionClosedError
+from websocket._exceptions import WebSocketConnectionClosedException
+from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
 import logging
 import os
@@ -142,9 +143,12 @@ def main():
             BlockNotFound,
             ConnectionClosedError,
             ConnectionRefusedError,
+            ConnectionResetError,
+            InvalidMessage,
             KeyError,
             TimeExhausted,
             ValueError,
+            WebSocketConnectionClosedException,
         ) as exc:
             logger.warning(f"Error: {exc}")
             oracle.start_recovery_mode()

@@ -1,12 +1,13 @@
 from dataclasses import dataclass, field
 from service_parameters import ServiceParameters
 from substrateinterface.base import QueryMapResult
-from substrateinterface.exceptions import SubstrateRequestException
+from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
 from substrate_interface_utils import SubstrateInterfaceUtils
+from utils import create_provider
 from web3.exceptions import BadFunctionCallOutput
 from websocket._exceptions import WebSocketConnectionClosedException
-from websockets.exceptions import ConnectionClosedError
+from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
 import logging
 
@@ -34,8 +35,13 @@ class Oracle:
             logger.warning("The default oracle mode is already working")
 
         logger.info("Starting default mode")
+
         self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
-        self.failure_reqs_count[self.service_params.substrate.url] = 0
+        if self.service_params.substrate.url not in self.failure_reqs_count:
+            self.failure_reqs_count[self.service_params.substrate.url] = 0
+        if self.service_params.w3.provider.endpoint_uri not in self.failure_reqs_count:
+            self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
+
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
@@ -50,6 +56,7 @@ class Oracle:
 
         while True:
             try:
+                self.failure_reqs_count[self.service_params.substrate.url] += 1
                 if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_num_of_failure_reqs:
                     self.undesirable_urls.add(self.service_params.substrate.url)
                     self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
@@ -60,27 +67,38 @@ class Oracle:
                         undesirable_urls=self.undesirable_urls,
                     )
 
+                if self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] > self.service_params.max_num_of_failure_reqs:
+                    self.undesirable_urls.add(self.service_params.w3.provider.endpoint_uri)
+                    self.service_params.w3 = create_provider(
+                        urls=self.service_params.ws_urls_para,
+                        timeout=self.service_params.timeout,
+                        undesirable_urls=self.undesirable_urls,
+                    )
+
                 current_era = SubstrateInterfaceUtils.get_active_era(self.service_params.substrate)
                 self.last_era_reported = self._get_oracle_report_era()
+                self.failure_reqs_count[self.service_params.substrate.url] -= 1
                 break
-
-            except KeyError:
-                self.failure_reqs_count[self.service_params.substrate.url] = 0
 
             except (
                 BadFunctionCallOutput,
                 ConnectionClosedError,
                 ConnectionRefusedError,
+                ConnectionResetError,
+                InvalidMessage,
                 WebSocketConnectionClosedException,
             ) as exc:
                 logger.warning(f"Error: {exc}")
-                self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
-                    urls=self.service_params.ws_urls_relay,
-                    ss58_format=self.service_params.ss58_format,
-                    type_registry_preset=self.service_params.type_registry_preset,
-                    timeout=self.service_params.timeout,
-                    undesirable_urls=self.undesirable_urls,
-                )
+                if self.service_params.w3.provider.endpoint_uri in self.failure_reqs_count:
+                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
+                else:
+                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
+
+            except KeyError:
+                if self.service_params.substrate.url not in self.failure_reqs_count:
+                    self.failure_reqs_count[self.service_params.substrate.url] = 0
+                else:
+                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
 
         logger.debug(f"ORED: {self.last_era_reported}")
         if self.last_era_reported > current_era.value['index']:
@@ -108,15 +126,9 @@ class Oracle:
         Read the staking parameters from the block where the era value is changed,
         generate the transaction body, sign and send to the parachain.
         '''
+        self.failure_reqs_count[self.service_params.substrate.url] += 1
         if self.last_era_reported == -1:
-            try:
-                self.last_era_reported = self._get_oracle_report_era()
-            except (
-                ConnectionRefusedError,
-                WebSocketConnectionClosedException,
-            ) as e:
-                logger.warning(f"Error: {e}")
-                raise e
+            self.last_era_reported = self._get_oracle_report_era()
 
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
 
@@ -127,7 +139,7 @@ class Oracle:
         block_hash = self._find_start_block(era.value['index'])
         if block_hash is None:
             logger.error("Can't find the required block")
-            return
+            raise BlockNotFound
         logger.info(f"Block hash: {block_hash}")
 
         parachain_balance = SubstrateInterfaceUtils.get_parachain_balance(
@@ -140,11 +152,13 @@ class Oracle:
             logger.warning("No staking parameters found")
             return
 
+        self.failure_reqs_count[self.service_params.substrate.url] -= 1
         logger.debug(';'.join([
             f"era: {era.value['index'] - 1}",
             f"parachain_balance: {parachain_balance}",
             f"staking parameters: {staking_parameters}",
-            f"failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
+            f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
+            f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
         ]))
 
         tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
@@ -310,16 +324,16 @@ class Oracle:
     def _sign_and_send_to_para(self, tx: dict):
         """Sign transaction and send to parachain"""
         tx_signed = self.service_params.w3.eth.account.signTransaction(tx, private_key=self.priv_key)
-        self.failure_reqs_count[self.service_params.substrate.url] += 1
+        self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         tx_hash = self.service_params.w3.eth.sendRawTransaction(tx_signed.rawTransaction)
         tx_receipt = self.service_params.w3.eth.waitForTransactionReceipt(tx_hash)
 
         if tx_receipt.status == 1:
             logger.debug(f"tx_hash: {tx_hash.hex()}")
             logger.info("The report was sent successfully. Resetting failure requests counter")
-            self.failure_reqs_count[self.service_params.substrate.url] = 0
-            if self.service_params.substrate.url in self.undesirable_urls:
-                self.undesirable_urls.remove(self.service_params.substrate.url)
+            self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
+            if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
+                self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
         else:
             logger.warning("Failed to send transaction")
             logger.debug(f"tx_receipt: {tx_receipt}")

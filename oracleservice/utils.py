@@ -30,12 +30,17 @@ NON_NEGATIVE_PARAMETERS = (
 )
 
 
-def create_provider(urls: list, timeout: int = 60) -> Web3:
+def create_provider(urls: list, timeout: int = 60, undesirable_urls: set = set()) -> Web3:
     """Create web3 websocket provider with one of the nodes given in the list"""
     provider = None
+    tried_all = False
 
     while True:
         for url in urls:
+            if url in undesirable_urls and not tried_all:
+                logger.info(f"Skipping undesirable url: {url}")
+                continue
+
             if not url.startswith('ws'):
                 logger.warning(f"Unsupported ws provider: {url}")
                 continue
@@ -58,6 +63,8 @@ def create_provider(urls: list, timeout: int = 60) -> Web3:
             else:
                 logger.info(f"Successfully connected to {url}")
                 return w3
+
+        tried_all = True
 
         logger.error("Failed to connect to any node")
         logger.info(f"Timeout: {timeout} seconds")
