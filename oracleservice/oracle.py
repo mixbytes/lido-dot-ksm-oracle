@@ -47,7 +47,7 @@ class Oracle:
     def start_recovery_mode(self):
         '''
         Start of the Oracle recovery mode.
-        The current era id (CEI) from relay chain and oracle report era id (ORED)
+        The current era id (CEI) from relay chain and the last era reported by Oracle (ORED)
         from parachain are being compared. If CEI less than ORED, then do not send a report.
         If failure requests counter exceeds the allowed value, reconnect to another node.
         '''
@@ -100,11 +100,11 @@ class Oracle:
                 else:
                     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
 
-        logger.debug(f"ORED: {self.last_era_reported}")
+        logger.debug(f"The last era reported by Oracle: {self.last_era_reported}")
         if self.last_era_reported > current_era.value['index']:
-            logger.info("CEI less than ORED: waiting for the next era")
+            logger.info("Current era less than the last era reported by Oracle: waiting for the next era")
         else:
-            logger.info("CEI equals or greater than ORED: create report for the current era")
+            logger.info("Current era equals or greater than the last era reported by Oracle: create report for the current era")
 
         logger.info("Recovery mode is completed")
 
@@ -133,7 +133,7 @@ class Oracle:
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
 
         if era.value['index'] < self.last_era_reported:
-            logger.info("CEI less than ORED: waiting for the next era")
+            logger.info("Current era less than the last era reported by Oracle: waiting for the next era")
             return
 
         block_hash = self._find_start_block(era.value['index'])
@@ -335,5 +335,5 @@ class Oracle:
             if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
                 self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
         else:
-            logger.warning("Failed to send transaction")
+            logger.warning(f"Failed to send transaction: {tx_receipt.status}")
             logger.debug(f"tx_receipt: {tx_receipt}")
