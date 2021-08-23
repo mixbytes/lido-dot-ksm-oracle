@@ -160,9 +160,8 @@ class Oracle:
                     f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
                 ]))
 
-                # TODO uncomment these lines
-                # tx = self._create_tx(era, parachain_balance, staking_parameters)
-                # self._sign_and_send_to_para(tx)
+                tx = self._create_tx(era, parachain_balance, staking_parameters)
+                self._sign_and_send_to_para(tx)
                 logger.info("Waiting for the next era")
 
     def _find_start_block(self, era_id: int) -> str:
@@ -185,22 +184,20 @@ class Oracle:
         staking_ledger_result = self._get_ledger_data(block_hash, stash)
         stake_status = self._get_stake_status(stash, block_hash)
 
-        # for controller, controller_info in staking_ledger_result.items():
 
-        # NOTE what is controller info?
-        # I need to figure how to carefully extract the same values
-        unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
+        for controller, controller_info in staking_ledger_result.items():
+            unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
 
-        staking_parameters = {
-            'stash': '0x' + ss58_decode(controller_info.value['stash']),
-            'controller': '0x' + ss58_decode(controller),
-            'stakeStatus': stake_status,
-            'activeBalance': controller_info.value['active'],
-            'totalBalance': controller_info.value['total'],
-            'unlocking': unlocking_values,
-            'claimedRewards': controller_info.value['claimedRewards'],
-            'stashBalance': stash_balance,
-        })
+            staking_parameters = {
+                'stash': '0x' + ss58_decode(controller_info.value['stash']),
+                'controller': '0x' + ss58_decode(controller),
+                'stakeStatus': stake_status,
+                'activeBalance': controller_info.value['active'],
+                'totalBalance': controller_info.value['total'],
+                'unlocking': unlocking_values,
+                'claimedRewards': controller_info.value['claimedRewards'],
+                'stashBalance': stash_balance,
+            })
 
         return staking_parameters
 
