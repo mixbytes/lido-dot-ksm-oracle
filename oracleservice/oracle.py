@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from service_parameters import ServiceParameters
-from substrateinterface.base import QueryMapResult
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
 from substrate_interface_utils import SubstrateInterfaceUtils
@@ -144,7 +143,7 @@ class Oracle:
                     self.service_params.para_id,
                     block_hash,
                 )
-                # TODO update staking_parameters extraction
+
                 staking_parameters = self._read_staking_parameters(block_hash)
                 if not staking_parameters:
                     logger.warning("No staking parameters found")
@@ -179,16 +178,25 @@ class Oracle:
             block_hash = self.service_params.substrate.get_chain_head()
 
         stash_balance = self._get_stash_balance(stash)
-        # TODO change the returned value and take care of sitation
-        # if no controller value was found
         staking_ledger_result = self._get_ledger_data(block_hash, stash)
-        stake_status = self._get_stake_status(stash, block_hash)
+        if staking_ledger_result is None:
+            return {
+                'stash': stash,
+                'controller': '',
+                'stakeStatus': 0,
+                'activeBalance': 0,
+                'totalBalance': 0,
+                'unlocking': [],
+                'claimedRewards': [],
+                'stashBalance': stash_balance,
+            }
 
+        stake_status = self._get_stake_status(stash, block_hash)
 
         for controller, controller_info in staking_ledger_result.items():
             unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
 
-            staking_parameters = {
+            return {
                 'stash': '0x' + ss58_decode(controller_info.value['stash']),
                 'controller': '0x' + ss58_decode(controller),
                 'stakeStatus': stake_status,
@@ -197,9 +205,7 @@ class Oracle:
                 'unlocking': unlocking_values,
                 'claimedRewards': controller_info.value['claimedRewards'],
                 'stashBalance': stash_balance,
-            })
-
-        return staking_parameters
+            }
 
     def _get_ledger_data(self, block_hash: str, stash: str) -> dict:
         """Get ledger data using stash account address"""
@@ -212,9 +218,8 @@ class Oracle:
             block_hash=block_hash,
         )
 
-        # TODO what if not found?
         if controller.value is None:
-            continue
+            return None
 
         staking_ledger = self.service_params.substrate.query(
             module='Staking',
@@ -226,26 +231,6 @@ class Oracle:
         ledger_data[controller.value] = staking_ledger
 
         return ledger_data
-
-    def _add_not_founded_stashes(self, staking_parameters: list, stash_balances: dict) -> list:
-        """Add information about not founded stash accounts to the report"""
-        staking_params_set = set(staking_parameters)
-        for stash in self.service_params.stash_accounts:
-            if stash in staking_params_set:
-                continue
-
-            staking_parameters.append({
-                'stash': stash,
-                'controller': '',
-                'stakeStatus': 0,
-                'activeBalance': 0,
-                'totalBalance': 0,
-                'unlocking': [],
-                'claimedRewards': [],
-                'stashBalance': stash_balances[stash],
-            })
-
-        return staking_parameters
 
     def _get_stash_balance(self, stash: str) -> dict:
         """Get stash accounts free balances"""
@@ -277,16 +262,16 @@ class Oracle:
             block_hash=block_hash,
         )
 
-        nominators = set(nominator.value for nominator, _ in nominators_)
-        validators = set(validator for validator in validators_.value)
+        nominators = set(nominator.value for nominator, _ in staking_nominators_result)
+        validators = set(validator for validator in session_validators_result.value)
 
-        if stash_account in nominators:
+        if stash in nominators:
             return 1
 
-        elif stash_account in validators:
+        elif stash in validators:
             return 2
 
-        return 0 
+        return 0
 
     def _create_tx(self, era_id: int, parachain_balance: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""

@@ -3,7 +3,7 @@ from functools import partial
 from log import init_log
 from oracle import Oracle
 from service_parameters import ServiceParameters
-from substrateinterface import Keypair, SubstrateInterface
+from substrateinterface import SubstrateInterface
 from substrateinterface.exceptions import BlockNotFound
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import create_provider, get_abi, remove_invalid_urls
