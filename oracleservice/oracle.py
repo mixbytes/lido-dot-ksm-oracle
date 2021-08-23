@@ -291,7 +291,7 @@ class Oracle:
 
     def _add_not_founded_stashes(self, staking_parameters: list, stash_balances: dict) -> list:
         """Add information about not founded stash accounts to the report"""
-        staking_params_set = set(staking_parameters)
+        staking_params_set = set([elem['stash'] for elem in staking_parameters])
         for stash in self.service_params.stash_accounts:
             if stash in staking_params_set:
                 continue
