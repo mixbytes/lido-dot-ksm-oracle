@@ -160,8 +160,9 @@ class Oracle:
                     f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
                 ]))
 
-                tx = self._create_tx(era, parachain_balance, staking_parameters)
-                self._sign_and_send_to_para(tx)
+                # TODO uncomment these lines
+                # tx = self._create_tx(era, parachain_balance, staking_parameters)
+                # self._sign_and_send_to_para(tx)
                 logger.info("Waiting for the next era")
 
     def _find_start_block(self, era_id: int) -> str:
@@ -178,51 +179,33 @@ class Oracle:
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
 
+        stash_balance = self._get_stash_balance(stash)
+        # TODO change the returned value and take care of sitation
+        # if no controller value was found
         staking_ledger_result = self._get_ledger_data(block_hash, stash)
+        stake_status = self._get_stake_status(stash, block_hash)
 
-        session_validators_result = self.service_params.substrate.query(
-            module='Session',
-            storage_function='Validators',
-            block_hash=block_hash,
-        )
+        # for controller, controller_info in staking_ledger_result.items():
 
-        staking_nominators_result = self.service_params.substrate.query_map(
-            module='Staking',
-            storage_function='Nominators',
-            block_hash=block_hash,
-        )
+        # NOTE what is controller info?
+        # I need to figure how to carefully extract the same values
+        unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
 
-        stash_balances = self._get_stash_balances()
-
-        stash_statuses = self._get_stash_statuses(
-            staking_ledger_result,
-            session_validators_result,
-            staking_nominators_result,
-        )
-
-        staking_parameters = {}
-
-        for controller, controller_info in staking_ledger_result.items():
-            unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
-
-            stash_addr = '0x' + ss58_decode(controller_info.value['stash'])
-            controller_addr = '0x' + ss58_decode(controller)
-
-            staking_parameters.append({
-                'stash': stash_addr,
-                'controller': controller_addr,
-                'stakeStatus': stash_statuses[controller_info.value['stash']],
-                'activeBalance': controller_info.value['active'],
-                'totalBalance': controller_info.value['total'],
-                'unlocking': unlocking_values,
-                'claimedRewards': controller_info.value['claimedRewards'],
-                'stashBalance': stash_balances[stash_addr],
-            })
+        staking_parameters = {
+            'stash': '0x' + ss58_decode(controller_info.value['stash']),
+            'controller': '0x' + ss58_decode(controller),
+            'stakeStatus': stake_status,
+            'activeBalance': controller_info.value['active'],
+            'totalBalance': controller_info.value['total'],
+            'unlocking': unlocking_values,
+            'claimedRewards': controller_info.value['claimedRewards'],
+            'stashBalance': stash_balance,
+        })
 
         return staking_parameters
 
     def _get_ledger_data(self, block_hash: str, stash: str) -> dict:
-        """Get ledger data using stash accounts list"""
+        """Get ledger data using stash account address"""
         ledger_data = {}
 
         controller = self.service_params.substrate.query(
@@ -232,6 +215,7 @@ class Oracle:
             block_hash=block_hash,
         )
 
+        # TODO what if not found?
         if controller.value is None:
             continue
 
@@ -266,43 +250,46 @@ class Oracle:
 
         return staking_parameters
 
-    def _get_stash_balances(self) -> dict:
+    def _get_stash_balance(self, stash: str) -> dict:
         """Get stash accounts free balances"""
-        balances = {}
+        account_info = self.service_params.substrate.query(
+            module='System',
+            storage_function='Account',
+            params=[stash]
+        )
 
-        for stash in self.service_params.stash_accounts:
-            result = self.service_params.substrate.query(
-                module='System',
-                storage_function='Account',
-                params=[stash]
-            )
+        return account_info.value['data']['free']
 
-            balances[stash] = result.value['data']['free']
-
-        return balances
-
-    def _get_stash_statuses(self, controllers_: dict, validators_, nominators_: QueryMapResult) -> dict:
+    def _get_stake_status(self, stash: str, block_hash: str = None) -> int:
         '''
-        Get stash accounts statuses.
+        Get stash account status.
         0 - Chill, 1 - Nominator, 2 - Validator
         '''
-        statuses = {}
+        if block_hash is None:
+            block_hash = self.service_params.substrate.get_chain_head()
+
+        session_validators_result = self.service_params.substrate.query(
+            module='Session',
+            storage_function='Validators',
+            block_hash=block_hash,
+        )
+
+        staking_nominators_result = self.service_params.substrate.query_map(
+            module='Staking',
+            storage_function='Nominators',
+            block_hash=block_hash,
+        )
+
         nominators = set(nominator.value for nominator, _ in nominators_)
         validators = set(validator for validator in validators_.value)
 
-        for controller_info in controllers_.values():
-            stash_account = controller_info.value['stash']
-            if stash_account in nominators:
-                statuses[stash_account] = 1
-                continue
+        if stash_account in nominators:
+            return 1
 
-            if stash_account in validators:
-                statuses[stash_account] = 2
-                continue
+        elif stash_account in validators:
+            return 2
 
-            statuses[stash_account] = 0
-
-        return statuses
+        return 0 
 
     def _create_tx(self, era_id: int, parachain_balance: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
