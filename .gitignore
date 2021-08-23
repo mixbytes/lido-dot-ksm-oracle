@@ -1,4 +1,8 @@
-oracleservice/__pycache__
-oracleservice/_config.py
+oracleservice/_config
 oracleservice/abi.json
+oracleservice/staking_parameters.txt
+
+tests/__pycache__
+oracleservice/__pycache__
+
 *.swp
