@@ -23,7 +23,6 @@ class Oracle:
     account = None
     default_mode_started: bool = False
     failure_reqs_count: dict = field(default_factory=dict)
-    last_era_reported: int = -1
     undesirable_urls: set = field(default_factory=set)
 
     def start_default_mode(self):
@@ -46,8 +45,6 @@ class Oracle:
     def start_recovery_mode(self):
         '''
         Start of the Oracle recovery mode.
-        The current era id (CEI) from relay chain and oracle report era id (ORED)
-        from parachain are being compared. If CEI less than ORED, then do not send a report.
         If failure requests counter exceeds the allowed value, reconnect to another node.
         '''
         logger.info("Starting recovery mode")
@@ -124,44 +121,40 @@ class Oracle:
         eras = stake_accounts['eraId']
 
         for idx, stash_acc in enumerate(stash_accounts):
-            for era in range(eras[idx], era.value['index'] + 1):
-                logger.debug(f"Make report for era: {era}; stash: {stash_acc}")
+            if era.value['index'] < eras[idx]:
+                logger.info(f"Current era less than the last era reported by Oracle for stash '{stash_acc}': waiting for the next era")
+                return
 
-                # NOTE what eras should I skip?
-                if era.value['index'] < self.last_era_reported:
-                    logger.info("CEI less than ORED: waiting for the next era")
-                    return
+            block_hash = self._find_start_block(era.value['index'])
+            if block_hash is None:
+                logger.error("Can't find the required block")
+                raise BlockNotFound
+            logger.info(f"Block hash: {block_hash}")
 
-                block_hash = self._find_start_block(era)
-                if block_hash is None:
-                    logger.error("Can't find the required block")
-                    raise BlockNotFound
-                logger.info(f"Block hash: {block_hash}")
+            parachain_balance = SubstrateInterfaceUtils.get_parachain_balance(
+                self.service_params.substrate,
+                self.service_params.para_id,
+                block_hash,
+            )
 
-                parachain_balance = SubstrateInterfaceUtils.get_parachain_balance(
-                    self.service_params.substrate,
-                    self.service_params.para_id,
-                    block_hash,
-                )
+            staking_parameters = self._read_staking_parameters(block_hash)
+            if not staking_parameters:
+                logger.warning("No staking parameters found")
+                return
 
-                staking_parameters = self._read_staking_parameters(block_hash)
-                if not staking_parameters:
-                    logger.warning("No staking parameters found")
-                    return
+            self.failure_reqs_count[self.service_params.substrate.url] -= 1
+            logger.debug(';'.join([
+                f"stash: {stash_acc}",
+                f"era: {era.value['index']}",
+                f"parachain_balance: {parachain_balance}",
+                f"staking parameters: {staking_parameters}",
+                f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
+                f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
+            ]))
 
-                self.failure_reqs_count[self.service_params.substrate.url] -= 1
-                logger.debug(';'.join([
-                    f"stash: {stash_acc}",
-                    f"era: {era}",
-                    f"parachain_balance: {parachain_balance}",
-                    f"staking parameters: {staking_parameters}",
-                    f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
-                    f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
-                ]))
-
-                tx = self._create_tx(era, parachain_balance, staking_parameters)
-                self._sign_and_send_to_para(tx)
-                logger.info("Waiting for the next era")
+            tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
+            self._sign_and_send_to_para(tx)
+            logger.info("Waiting for the next era")
 
     def _find_start_block(self, era_id: int) -> str:
         """Find the hash of the block at which the era change occurs"""
