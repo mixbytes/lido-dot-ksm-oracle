@@ -261,7 +261,7 @@ class Oracle:
         if stash in nominators:
             return 1
 
-        elif stash in validators:
+        if stash in validators:
             return 2
 
         return 0
@@ -292,5 +292,5 @@ class Oracle:
             if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
                 self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
         else:
-            logger.warning("Failed to send transaction")
+            logger.warning(f"Failed to send transaction: {tx_receipt.status}")
             logger.debug(f"tx_receipt: {tx_receipt}")
