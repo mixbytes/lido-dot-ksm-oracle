@@ -95,12 +95,14 @@ class Oracle:
         logger.info("Recovery mode is completed")
 
     def _get_stake_accounts(self) -> list:
+        """Get list of stash accounts and the last era reported using 'getStakeAccounts' function"""
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
-               ).functions.getStakeAccounts(self.priv_key.address).call()
+               ).functions.getStakeAccounts(self.account.address).call()
 
     def _start_era_monitoring(self):
+        """Start monitoring an era change event"""
         self.service_params.substrate.query(
             module='Staking',
             storage_function='ActiveEra',
@@ -115,13 +117,18 @@ class Oracle:
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
-        # TODO extract stake accounts list correct
         stake_accounts = self._get_stake_accounts()
-        stash_accounts = stake_accounts['stashAccounts']
-        eras = stake_accounts['eraId']
+        if not stake_accounts:
+            logger.info("No stake accounts found: waiting for the next era")
+            return
+        self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
-        for idx, stash_acc in enumerate(stash_accounts):
-            if era.value['index'] < eras[idx]:
+        for stash_acc, era_id in stake_accounts:
+            # TODO decode stash_acc correct
+            self.failure_reqs_count[self.service_params.substrate.url] += 1
+            stash_acc = stash_acc.hex()
+            logger.debug(f"Contract data: stash {stash_acc}; era {era_id}")
+            if era.value['index'] < era_id:
                 logger.info(f"Current era less than the last era reported by Oracle for stash '{stash_acc}': waiting for the next era")
                 return
 
@@ -130,12 +137,6 @@ class Oracle:
                 logger.error("Can't find the required block")
                 raise BlockNotFound
             logger.info(f"Block hash: {block_hash}")
-
-            parachain_balance = SubstrateInterfaceUtils.get_parachain_balance(
-                self.service_params.substrate,
-                self.service_params.para_id,
-                block_hash,
-            )
 
             staking_parameters = self._read_staking_parameters(block_hash)
             if not staking_parameters:
@@ -146,13 +147,12 @@ class Oracle:
             logger.debug(';'.join([
                 f"stash: {stash_acc}",
                 f"era: {era.value['index']}",
-                f"parachain_balance: {parachain_balance}",
                 f"staking parameters: {staking_parameters}",
                 f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
                 f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
             ]))
 
-            tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
+            tx = self._create_tx(era.value['index'], staking_parameters)
             self._sign_and_send_to_para(tx)
             logger.info("Waiting for the next era")
 
@@ -235,6 +235,7 @@ class Oracle:
 
         return account_info.value['data']['free']
 
+    # TODO add 'Blocked' and 'None'
     def _get_stake_status(self, stash: str, block_hash: str = None) -> int:
         '''
         Get stash account status.
@@ -266,7 +267,7 @@ class Oracle:
 
         return 0
 
-    def _create_tx(self, era_id: int, parachain_balance: int, staking_parameters: dict) -> dict:
+    def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
         nonce = self.service_params.w3.eth.getTransactionCount(self.account.address)
 
@@ -275,7 +276,7 @@ class Oracle:
                 abi=self.service_params.abi
                ).functions.reportRelay(
                 era_id,
-                {'parachainBalance': parachain_balance, 'stakeLedger': staking_parameters},
+                staking_parameters,
                ).buildTransaction({'gas': self.service_params.gas_limit, 'nonce': nonce})
 
     def _sign_and_send_to_para(self, tx: dict):

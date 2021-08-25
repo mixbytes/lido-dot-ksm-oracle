@@ -90,7 +90,16 @@ def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
         if not hasattr(contract.functions, 'reportRelay'):
             raise ABIFunctionNotFound("The contract does not contain the 'reportRelay' function")
 
-        contract.functions.reportRelay(0, {'parachainBalance': 0, 'stakeLedger': []}).call()
+        contract.functions.reportRelay(0, {
+            'stash': '',
+            'controller': '',
+            'stakeStatus': 0,
+            'activeBalance': 0,
+            'totalBalance': 0,
+            'unlocking': [],
+            'claimedRewards': [],
+            'stashBalance': 0,
+        }).call()
 
         if not hasattr(contract.functions, 'getStakeAccounts'):
             raise ABIFunctionNotFound("The contract does not contain the 'getStakeAccounts' function")

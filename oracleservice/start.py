@@ -94,7 +94,7 @@ def main():
         signal.signal(signal.SIGINT, partial(stop_signal_handler, substrate=substrate))
 
         check_contract_address(w3, contract_address)
-        check_abi(w3, contract_address, abi, oracle_private_key.address)
+        check_abi(w3, contract_address, abi, w3.eth.account.from_key(oracle_private_key).address)
 
     except (
         ABIFunctionNotFound,
