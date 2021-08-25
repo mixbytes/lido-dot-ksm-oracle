@@ -124,9 +124,8 @@ class Oracle:
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
         for stash_acc, era_id in stake_accounts:
-            # TODO decode stash_acc correct
             self.failure_reqs_count[self.service_params.substrate.url] += 1
-            stash_acc = stash_acc.hex()
+            stash_acc = '0x' + stash_acc.hex()
             logger.debug(f"Contract data: stash {stash_acc}; era {era_id}")
             if era.value['index'] < era_id:
                 logger.info(f"Current era less than the last era reported by Oracle for stash '{stash_acc}': waiting for the next era")
@@ -138,7 +137,7 @@ class Oracle:
                 raise BlockNotFound
             logger.info(f"Block hash: {block_hash}")
 
-            staking_parameters = self._read_staking_parameters(block_hash)
+            staking_parameters = self._read_staking_parameters(stash_acc, block_hash)
             if not staking_parameters:
                 logger.warning("No staking parameters found")
                 return

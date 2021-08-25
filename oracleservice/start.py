@@ -8,7 +8,7 @@ from substrateinterface.exceptions import BlockNotFound
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import create_provider, get_abi, remove_invalid_urls
 from utils import check_abi, check_contract_address, check_log_level, perform_sanity_checks
-from web3.exceptions import ABIFunctionNotFound, TimeExhausted
+from web3.exceptions import ABIFunctionNotFound, TimeExhausted, ValidationError
 from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
@@ -143,6 +143,7 @@ def main():
             InvalidMessage,
             KeyError,
             TimeExhausted,
+            ValidationError,
             ValueError,
             WebSocketConnectionClosedException,
         ) as exc:
