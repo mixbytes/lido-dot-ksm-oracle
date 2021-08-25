@@ -175,7 +175,7 @@ class Oracle:
             return {
                 'stash': stash,
                 'controller': '',
-                'stakeStatus': 0,
+                'stakeStatus': 3,  # this value means that stake status is None
                 'activeBalance': 0,
                 'totalBalance': 0,
                 'unlocking': [],
@@ -234,11 +234,11 @@ class Oracle:
 
         return account_info.value['data']['free']
 
-    # TODO add 'Blocked' and 'None'
+    # TODO add 'Blocked'
     def _get_stake_status(self, stash: str, block_hash: str = None) -> int:
         '''
         Get stash account status.
-        0 - Chill, 1 - Nominator, 2 - Validator
+        0 - Chill, 1 - Nominator, 2 - Validator, 3 - None, 4 - Blocked
         '''
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
