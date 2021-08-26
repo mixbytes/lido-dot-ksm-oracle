@@ -111,8 +111,8 @@ class Oracle:
 
     def _handle_era_change(self, era, update_nr: int, subscription_id: str):
         '''
-        Read the staking parameters from the block where the era value is changed,
-        generate the transaction body, sign and send to the parachain.
+        Read the staking parameters for each stash account separately from the block where
+        the era value is changed, generate the transaction body, sign and send to the parachain.
         '''
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
 
@@ -128,7 +128,7 @@ class Oracle:
             stash_acc = '0x' + stash_acc.hex()
             logger.info(f"Contract data: stash {stash_acc}; era {era_id}")
             if era.value['index'] < era_id:
-                logger.info(f"Current era less than the last era reported by Oracle for stash '{stash_acc}': waiting for the next era")
+                logger.info(f"Current era less than the specified era for stash '{stash_acc}': waiting for the next era")
                 return
 
             block_hash = self._find_start_block(era.value['index'])
@@ -234,11 +234,10 @@ class Oracle:
 
         return account_info.value['data']['free']
 
-    # TODO add 'Blocked'
     def _get_stake_status(self, stash: str, block_hash: str = None) -> int:
         '''
         Get stash account status.
-        0 - Chill, 1 - Nominator, 2 - Validator, 3 - None, 4 - Blocked
+        0 - Chill, 1 - Nominator, 2 - Validator
         '''
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
