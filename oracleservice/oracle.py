@@ -126,7 +126,7 @@ class Oracle:
         for stash_acc, era_id in stake_accounts:
             self.failure_reqs_count[self.service_params.substrate.url] += 1
             stash_acc = '0x' + stash_acc.hex()
-            logger.debug(f"Contract data: stash {stash_acc}; era {era_id}")
+            logger.info(f"Contract data: stash {stash_acc}; era {era_id}")
             if era.value['index'] < era_id:
                 logger.info(f"Current era less than the last era reported by Oracle for stash '{stash_acc}': waiting for the next era")
                 return
