@@ -9,7 +9,6 @@ from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
 import logging
-import time
 
 
 logger = logging.getLogger(__name__)
@@ -24,7 +23,7 @@ class Oracle:
     account = None
     default_mode_started: bool = False
     failure_reqs_count: dict = field(default_factory=dict)
-    amount_of_successful_reports: int = 0
+    nonce: int = 0
     stashes_with_successful_reports: set = field(default_factory=set)
     undesirable_urls: set = field(default_factory=set)
 
@@ -38,12 +37,14 @@ class Oracle:
         logger.info("Starting default mode")
 
         self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
+        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
         if self.service_params.substrate.url not in self.failure_reqs_count:
             self.failure_reqs_count[self.service_params.substrate.url] = 0
         if self.service_params.w3.provider.endpoint_uri not in self.failure_reqs_count:
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
+        self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
@@ -122,12 +123,12 @@ class Oracle:
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         stake_accounts = self._get_stake_accounts()
+        self.failure_reqs_count[self.service_params.substrate.url] -= 1
         if not stake_accounts:
             logger.info("No stake accounts found: waiting for the next era")
             return
-        self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
-        while self.amount_of_successful_reports != len(stake_accounts):
+        while len(self.stashes_with_successful_reports) != len(stake_accounts):
             for stash_acc, era_id in stake_accounts:
                 if stash_acc in self.stashes_with_successful_reports:
                     continue
@@ -136,8 +137,9 @@ class Oracle:
                 stash_acc = '0x' + stash_acc.hex()
                 logger.info(f"Current stash is {stash_acc}; era is {era_id}")
                 if era.value['index'] < era_id:
-                    logger.info(f"Current era less than the specified era for stash '{stash_acc}': waiting for the next era")
-                    return
+                    logger.info(f"Current era less than the specified era for stash '{stash_acc}': skipping current era")
+                    self.stashes_with_successful_reports.add(stash_acc)
+                    continue
 
                 block_hash = self._find_start_block(era.value['index'])
                 if block_hash is None:
@@ -146,9 +148,6 @@ class Oracle:
                 logger.info(f"Block hash: {block_hash}")
 
                 staking_parameters = self._read_staking_parameters(stash_acc, block_hash)
-                if not staking_parameters:
-                    logger.warning("No staking parameters found")
-                    return
 
                 self.failure_reqs_count[self.service_params.substrate.url] -= 1
                 logger.debug(';'.join([
@@ -162,14 +161,11 @@ class Oracle:
                 tx = self._create_tx(era.value['index'], staking_parameters)
                 self._sign_and_send_to_para(tx, stash_acc)
 
-                # NOTE this sleep is necessary in order to avoid the TooLowPriority error
-                time.sleep(20)
-
             if self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] > self.service_params.max_num_of_failure_reqs:
-                raise TimeExhausted("Failed to send transaction")
+                if len(stake_accounts) != len(self.stashes_with_successful_reports):
+                    raise TimeExhausted("Failed to send transaction")
 
         logger.info("Waiting for the next era")
-        self.amount_of_successful_reports = 0
         self.stashes_with_successful_reports.clear()
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
@@ -287,28 +283,27 @@ class Oracle:
 
     def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
-        nonce = self.service_params.w3.eth.getTransactionCount(self.account.address)
-
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
                ).functions.reportRelay(
                 era_id,
                 staking_parameters,
-               ).buildTransaction({'gas': self.service_params.gas_limit, 'nonce': nonce})
+               ).buildTransaction({'gas': self.service_params.gas_limit, 'nonce': self.nonce})
 
     def _sign_and_send_to_para(self, tx: dict, stash: str):
         """Sign transaction and send to parachain"""
-        tx_signed = self.service_params.w3.eth.account.signTransaction(tx, private_key=self.priv_key)
+        tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.priv_key)
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
-        tx_hash = self.service_params.w3.eth.sendRawTransaction(tx_signed.rawTransaction)
-        tx_receipt = self.service_params.w3.eth.waitForTransactionReceipt(tx_hash)
+        tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
+        tx_receipt = self.service_params.w3.eth.wait_for_transaction_receipt(tx_hash)
 
         if tx_receipt.status == 1:
             logger.debug(f"tx_hash: {tx_hash.hex()}")
             logger.info(f"The report for stash {stash} was sent successfully")
-            self.amount_of_successful_reports += 1
+            self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] -= 1
             self.stashes_with_successful_reports.add(stash)
+            self.nonce += 1
         else:
             logger.warning(f"Failed to send report for stash {stash}: tx status is {tx_receipt.status}")
             logger.debug(f"tx_receipt: {tx_receipt}")
