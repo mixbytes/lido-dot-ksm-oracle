@@ -12,8 +12,8 @@ class MetricsExporter:
     active_era_id = Gauge('active_era_id', 'active era index')
     last_era_reported = Gauge('last_era_reported', 'the last era that the Oracle has reported')
     previous_era_change_block_number = Gauge('previous_era_change_block_number', 'block number of the previous era change')
-    time_elapsed_until_last_era_report = Gauge('time_elapsed_until_last_era_report',
-                                               'the time elapsed until the last era report from the unix epoch in seconds')
+    time_elapsed_until_last_report = Gauge('time_elapsed_until_last_report',
+                                           'the time elapsed until the last report from the unix epoch in seconds')
 
     total_stashes_free_balance = Gauge('total_stashes_free_balance', 'total free balance of all stash accounts')
 

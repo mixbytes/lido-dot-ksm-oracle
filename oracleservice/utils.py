@@ -30,12 +30,17 @@ NON_NEGATIVE_PARAMETERS = (
 )
 
 
-def create_provider(urls: list, timeout: int = 60) -> Web3:
+def create_provider(urls: list, timeout: int = 60, undesirable_urls: set = set()) -> Web3:
     """Create web3 websocket provider with one of the nodes given in the list"""
     provider = None
+    tried_all = False
 
     while True:
         for url in urls:
+            if url in undesirable_urls and not tried_all:
+                logger.info(f"Skipping undesirable url: {url}")
+                continue
+
             if not url.startswith('ws'):
                 logger.warning(f"Unsupported ws provider: {url}")
                 continue
@@ -59,6 +64,8 @@ def create_provider(urls: list, timeout: int = 60) -> Web3:
                 logger.info(f"Successfully connected to {url}")
                 return w3
 
+        tried_all = True
+
         logger.error("Failed to connect to any node")
         logger.info(f"Timeout: {timeout} seconds")
         time.sleep(timeout)
@@ -77,13 +84,27 @@ def check_contract_address(w3: Web3, contract_addr: str):
         raise ValueError("Incorrect contract address or the contract is not deployed")
 
 
-def check_abi(w3: Web3, contract_addr: str, abi: list):
+def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
     contract = w3.eth.contract(address=contract_addr, abi=abi)
     try:
         if not hasattr(contract.functions, 'reportRelay'):
             raise ABIFunctionNotFound("The contract does not contain the 'reportRelay' function")
 
-        contract.functions.reportRelay(0, {'parachainBalance': 0, 'stakeLedger': []}).call()
+        contract.functions.reportRelay(0, {
+            'stash': '',
+            'controller': '',
+            'stakeStatus': 0,
+            'activeBalance': 0,
+            'totalBalance': 0,
+            'unlocking': [],
+            'claimedRewards': [],
+            'stashBalance': 0,
+        }).call()
+
+        if not hasattr(contract.functions, 'getStakeAccounts'):
+            raise ABIFunctionNotFound("The contract does not contain the 'getStakeAccounts' function")
+
+        contract.functions.getStakeAccounts(oracle_addr).call()
 
     except ValueError:
         pass
