@@ -36,8 +36,6 @@ class Oracle:
 
         logger.info("Starting default mode")
 
-        self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
-        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
         if self.service_params.substrate.url not in self.failure_reqs_count:
             self.failure_reqs_count[self.service_params.substrate.url] = 0
         if self.service_params.w3.provider.endpoint_uri not in self.failure_reqs_count:
@@ -45,19 +43,29 @@ class Oracle:
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
+
+        self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
+        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
+
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
-        '''
-        Start of the Oracle recovery mode.
-        If failure requests counter exceeds the allowed value, reconnect to another node.
-        '''
+        """Start of the Oracle recovery mode."""
         logger.info("Starting recovery mode")
         self.default_mode_started = False
 
+        self._recover_connection_to_relaychain()
+        self._recover_connection_to_parachain()
+
+        logger.info("Recovery mode is completed")
+
+    def _recover_connection_to_relaychain(self):
+        """
+        Recover connection to relaychain.
+        If failure requests counter exceeds the allowed value, reconnect to another node.
+        """
         while True:
             try:
-                self.failure_reqs_count[self.service_params.substrate.url] += 1
                 if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_num_of_failure_reqs:
                     self.undesirable_urls.add(self.service_params.substrate.url)
                     self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
@@ -67,6 +75,29 @@ class Oracle:
                         timeout=self.service_params.timeout,
                         undesirable_urls=self.undesirable_urls,
                     )
+                break
+
+            except (
+                BadFunctionCallOutput,
+                ConnectionClosedError,
+                ConnectionRefusedError,
+                ConnectionResetError,
+                InvalidMessage,
+                WebSocketConnectionClosedException,
+            ) as exc:
+                logger.warning(f"Error: {exc}")
+                if self.service_params.substrate.url in self.failure_reqs_count:
+                    self.failure_reqs_count[self.service_params.substrate.url] += 1
+                else:
+                    self.failure_reqs_count[self.service_params.substrate.url] = 1
+
+    def _recover_connection_to_parachain(self):
+        """
+        Recover connection to parachain.
+        If failure requests counter exceeds the allowed value, reconnect to another node.
+        """
+        while True:
+            try:
                 if self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] > self.service_params.max_num_of_failure_reqs:
                     self.undesirable_urls.add(self.service_params.w3.provider.endpoint_uri)
                     self.service_params.w3 = create_provider(
@@ -74,7 +105,6 @@ class Oracle:
                         timeout=self.service_params.timeout,
                         undesirable_urls=self.undesirable_urls,
                     )
-                self.failure_reqs_count[self.service_params.substrate.url] -= 1
                 break
 
             except (
@@ -92,12 +122,10 @@ class Oracle:
                     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
 
             except KeyError:
-                if self.service_params.substrate.url not in self.failure_reqs_count:
-                    self.failure_reqs_count[self.service_params.substrate.url] = 0
+                if self.service_params.w3.provider.endpoint_uri in self.failure_reqs_count:
+                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
                 else:
-                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
-
-        logger.info("Recovery mode is completed")
+                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
 
     def _get_stake_accounts(self) -> list:
         """Get list of stash accounts and the last era reported using 'getStakeAccounts' function"""
@@ -115,10 +143,10 @@ class Oracle:
         )
 
     def _handle_era_change(self, era, update_nr: int, subscription_id: str):
-        '''
+        """
         Read the staking parameters for each stash account separately from the block where
         the era value is changed, generate the transaction body, sign and send to the parachain.
-        '''
+        """
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
@@ -127,6 +155,12 @@ class Oracle:
         if not stake_accounts:
             logger.info("No stake accounts found: waiting for the next era")
             return
+
+        block_hash = self._find_start_block(era.value['index'])
+        if block_hash is None:
+            logger.error("Can't find the required block")
+            raise BlockNotFound
+        logger.info(f"Block hash: {block_hash}")
 
         while len(self.stashes_with_successful_reports) != len(stake_accounts):
             for stash_acc, era_id in stake_accounts:
@@ -141,15 +175,9 @@ class Oracle:
                     self.stashes_with_successful_reports.add(stash_acc)
                     continue
 
-                block_hash = self._find_start_block(era.value['index'])
-                if block_hash is None:
-                    logger.error("Can't find the required block")
-                    raise BlockNotFound
-                logger.info(f"Block hash: {block_hash}")
-
                 staking_parameters = self._read_staking_parameters(stash_acc, block_hash)
-
                 self.failure_reqs_count[self.service_params.substrate.url] -= 1
+
                 logger.debug(';'.join([
                     f"stash: {stash_acc}",
                     f"era: {era.value['index']}",
@@ -185,7 +213,7 @@ class Oracle:
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
 
-        stash_balance = self._get_stash_balance(stash)
+        stash_free_balance = self._get_stash_free_balance(stash)
         staking_ledger_result = self._get_ledger_data(block_hash, stash)
         if staking_ledger_result is None:
             return {
@@ -196,7 +224,7 @@ class Oracle:
                 'totalBalance': 0,
                 'unlocking': [],
                 'claimedRewards': [],
-                'stashBalance': stash_balance,
+                'stashBalance': stash_free_balance,
             }
 
         stake_status = self._get_stake_status(stash, block_hash)
@@ -212,66 +240,38 @@ class Oracle:
                 'totalBalance': controller_info.value['total'],
                 'unlocking': unlocking_values,
                 'claimedRewards': controller_info.value['claimedRewards'],
-                'stashBalance': stash_balance,
+                'stashBalance': stash_free_balance,
             }
 
     def _get_ledger_data(self, block_hash: str, stash: str) -> dict:
         """Get ledger data using stash account address"""
-        ledger_data = {}
-
-        controller = self.service_params.substrate.query(
-            module='Staking',
-            storage_function='Bonded',
-            params=[stash],
-            block_hash=block_hash,
-        )
-
+        controller = SubstrateInterfaceUtils.get_controller(self.service_params.substrate, stash, block_hash)
         if controller.value is None:
             return None
 
-        staking_ledger = self.service_params.substrate.query(
-            module='Staking',
-            storage_function='Ledger',
-            params=[controller.value],
-            block_hash=block_hash,
-        )
+        ledger = SubstrateInterfaceUtils.get_ledger(self.service_params.substrate, controller.value, block_hash)
 
-        ledger_data[controller.value] = staking_ledger
+        return {controller.value: ledger}
 
-        return ledger_data
-
-    def _get_stash_balance(self, stash: str) -> dict:
+    def _get_stash_free_balance(self, stash: str) -> dict:
         """Get stash accounts free balances"""
-        account_info = self.service_params.substrate.query(
-            module='System',
-            storage_function='Account',
-            params=[stash]
-        )
+        account = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash)
 
-        return account_info.value['data']['free']
+        return account.value['data']['free']
 
     def _get_stake_status(self, stash: str, block_hash: str = None) -> int:
-        '''
+        """
         Get stash account status.
         0 - Chill, 1 - Nominator, 2 - Validator
-        '''
+        """
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
 
-        session_validators_result = self.service_params.substrate.query(
-            module='Session',
-            storage_function='Validators',
-            block_hash=block_hash,
-        )
+        staking_validators = SubstrateInterfaceUtils.get_validators(self.service_params.substrate, block_hash)
+        staking_nominators = SubstrateInterfaceUtils.get_nominators(self.service_params.substrate, block_hash)
 
-        staking_nominators_result = self.service_params.substrate.query_map(
-            module='Staking',
-            storage_function='Nominators',
-            block_hash=block_hash,
-        )
-
-        nominators = set(nominator.value for nominator, _ in staking_nominators_result)
-        validators = set(validator for validator in session_validators_result.value)
+        nominators = set(nominator.value for nominator, _ in staking_nominators)
+        validators = set(validator for validator in staking_validators.value)
 
         if stash in nominators:
             return 1

@@ -85,6 +85,7 @@ def check_contract_address(w3: Web3, contract_addr: str):
 
 
 def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
+    """Check the provided ABI by checking JSON file and calling the contract methods"""
     contract = w3.eth.contract(address=contract_addr, abi=abi)
     try:
         if not hasattr(contract.functions, 'reportRelay'):
