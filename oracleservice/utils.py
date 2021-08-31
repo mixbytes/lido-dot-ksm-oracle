@@ -139,7 +139,8 @@ def remove_invalid_urls(urls: [str]) -> [str]:
 def perform_sanity_checks(
     abi_path: str,
     contract_address: str,
-    era_duration: int,
+    era_duration_in_blocks: int,
+    era_duration_in_seconds: int,
     gas_limit: int,
     initial_block_number: int,
     max_number_of_failure_requests: int,
@@ -151,7 +152,8 @@ def perform_sanity_checks(
 ):
     """Check the parameters passed to the Oracle"""
     try:
-        assert era_duration > 0
+        assert era_duration_in_blocks > 0
+        assert era_duration_in_seconds > 0
         assert initial_block_number >= 0
         assert timeout >= 0
         assert gas_limit > 0

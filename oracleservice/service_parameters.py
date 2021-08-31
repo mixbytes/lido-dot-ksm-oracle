@@ -9,7 +9,8 @@ class ServiceParameters:
     abi: list = field(default_factory=list)
     gas_limit: int = 10000000
 
-    era_duration: int = 30
+    era_duration_in_blocks: int = 30
+    era_duration_in_seconds: int = 180
     initial_block_number: int = 1
 
     max_num_of_failure_reqs: int = 10

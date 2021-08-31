@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_GAS_LIMIT = 10000000
 DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
 DEFAULT_TIMEOUT = 60
-DEFAULT_ERA_DURATION = 30
+DEFAULT_ERA_DURATION_IN_BLOCKS = 30
+DEFAULT_ERA_DURATION_IN_SECONDS = 180
 DEFAULT_INITIAL_BLOCK_NUMBER = 1
 
 
@@ -62,7 +63,8 @@ def main():
         ))
         timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
 
-        era_duration = int(os.getenv('ERA_DURATION', DEFAULT_ERA_DURATION))
+        era_duration_in_blocks = int(os.getenv('ERA_DURATION_IN_BLOCKS', DEFAULT_ERA_DURATION_IN_BLOCKS))
+        era_duration_in_seconds = int(os.getenv('ERA_DURATION_IN_SECONDS', DEFAULT_ERA_DURATION_IN_SECONDS))
         initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
 
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
@@ -72,7 +74,8 @@ def main():
         perform_sanity_checks(
             abi_path=abi_path,
             contract_address=contract_address,
-            era_duration=era_duration,
+            era_duration_in_blocks=era_duration_in_blocks,
+            era_duration_in_seconds=era_duration_in_seconds,
             gas_limit=gas_limit,
             initial_block_number=initial_block_number,
             max_number_of_failure_requests=max_number_of_failure_requests,
@@ -109,7 +112,8 @@ def main():
     service_params = ServiceParameters(
         abi=abi,
         contract_address=contract_address,
-        era_duration=era_duration,
+        era_duration_in_blocks=era_duration_in_blocks,
+        era_duration_in_seconds=era_duration_in_seconds,
         gas_limit=gas_limit,
         initial_block_number=initial_block_number,
         max_num_of_failure_reqs=max_number_of_failure_requests,

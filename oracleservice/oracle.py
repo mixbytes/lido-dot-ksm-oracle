@@ -9,6 +9,7 @@ from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
 import logging
+import threading as th
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,10 @@ class Oracle:
     nonce: int = 0
     stashes_with_successful_reports: set = field(default_factory=set)
     undesirable_urls: set = field(default_factory=set)
+    watchdog: th.Timer = field(init=False)
+
+    def __post_init__(self):
+        self._create_watchdog()
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -68,6 +73,7 @@ class Oracle:
             try:
                 if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_num_of_failure_reqs:
                     self.undesirable_urls.add(self.service_params.substrate.url)
+                    self.service_params.substrate.websocket.shutdown()
                     self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
                         urls=self.service_params.ws_urls_relay,
                         ss58_format=self.service_params.ss58_format,
@@ -142,11 +148,23 @@ class Oracle:
             subscription_handler=self._handle_era_change,
         )
 
+    def _close_connection_to_relaychain(self):
+        self.failure_reqs_count[self.service_params.substrate.url] += 1
+        self.service_params.substrate.websocket.close()
+        exit()
+
+    def _create_watchdog(self):
+        self.watchdog = th.Timer(self.service_params.era_duration_in_seconds, self._close_connection_to_relaychain)
+
     def _handle_era_change(self, era, update_nr: int, subscription_id: str):
         """
         Read the staking parameters for each stash account separately from the block where
         the era value is changed, generate the transaction body, sign and send to the parachain.
         """
+        self.watchdog.cancel()
+        self._create_watchdog()
+        self.watchdog.start()
+
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
@@ -201,7 +219,7 @@ class Oracle:
 
     def _find_start_block(self, era_id: int) -> str:
         """Find the hash of the block at which the era change occurs"""
-        block_number = era_id * self.service_params.era_duration + self.service_params.initial_block_number
+        block_number = era_id * self.service_params.era_duration_in_blocks + self.service_params.initial_block_number
 
         try:
             return self.service_params.substrate.get_block_hash(block_number)
