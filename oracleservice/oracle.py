@@ -134,11 +134,11 @@ class Oracle:
                     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
 
     def _get_stake_accounts(self) -> list:
-        """Get list of stash accounts and the last era reported using 'getStakeAccounts' function"""
+        """Get list of stash accounts and the last era reported using 'getStashAccounts' function"""
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
-               ).functions.getStakeAccounts(self.account.address).call()
+               ).functions.getStashAccounts().call()
 
     def _start_era_monitoring(self):
         """Start monitoring an era change event"""
