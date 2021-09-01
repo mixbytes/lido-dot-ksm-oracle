@@ -315,6 +315,7 @@ class Oracle:
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
         tx_receipt = self.service_params.w3.eth.wait_for_transaction_receipt(tx_hash)
+        logger.debug(f"Transaction receipt: {tx_receipt}")
 
         if tx_receipt.status == 1:
             logger.debug(f"tx_hash: {tx_hash.hex()}")
