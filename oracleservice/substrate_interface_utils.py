@@ -115,13 +115,13 @@ class SubstrateInterfaceUtils:
     def get_nominators(substrate: SubstrateInterface, block_hash: str = None):
         """Get list of nominators using 'Nominators' storage function from 'Staking' module"""
         if block_hash:
-            return substrate.query(
+            return substrate.query_map(
              module='Staking',
              storage_function='Nominators',
              block_hash=block_hash,
             )
 
-        return substrate.query(
+        return substrate.query_map(
             module='Staking',
             storage_function='Nominators',
         )

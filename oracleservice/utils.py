@@ -102,10 +102,10 @@ def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
             'stashBalance': 0,
         }).call()
 
-        if not hasattr(contract.functions, 'getStakeAccounts'):
-            raise ABIFunctionNotFound("The contract does not contain the 'getStakeAccounts' function")
+        if not hasattr(contract.functions, 'getStashAccounts'):
+            raise ABIFunctionNotFound("The contract does not contain the 'getStashAccounts' function")
 
-        contract.functions.getStakeAccounts(oracle_addr).call()
+        contract.functions.getStashAccounts().call()
 
     except ValueError:
         pass
