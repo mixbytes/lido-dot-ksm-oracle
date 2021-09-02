@@ -23,6 +23,7 @@ class Oracle:
     account = None
     default_mode_started: bool = False
     failure_reqs_count: dict = field(default_factory=dict)
+    last_era_reported: dict = field(default_factory=dict)
     nonce: int = 0
     undesirable_urls: set = field(default_factory=set)
 
@@ -126,7 +127,7 @@ class Oracle:
                 else:
                     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
 
-    def _get_stake_accounts(self) -> list:
+    def _get_stash_accounts(self) -> list:
         """Get list of stash accounts and the last era reported using 'getStashAccounts' function"""
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
@@ -149,7 +150,7 @@ class Oracle:
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
-        stake_accounts = self._get_stake_accounts()
+        stake_accounts = self._get_stash_accounts()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
         if not stake_accounts:
             logger.info("No stake accounts found: waiting for the next era")
@@ -169,6 +170,10 @@ class Oracle:
                 logger.info(f"Current era less than the specified era for stash '{stash_acc}': skipping current era")
                 continue
 
+            if stash_acc in self.last_era_reported and self.last_era_reported[stash_acc] >= era.value['index']:
+                logger.info(f"The report has already been sent for stash {stash_acc}")
+                continue
+
             staking_parameters = self._read_staking_parameters(stash_acc, block_hash)
             self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
@@ -182,9 +187,10 @@ class Oracle:
 
             tx = self._create_tx(era.value['index'], staking_parameters)
             self._sign_and_send_to_para(tx, stash_acc)
+            self.last_era_reported[stash_acc] = era.value['index']
 
         logger.info("Waiting for the next era")
-        self.failure_reqs_count[self.service_params.substrate.url] -= 1
+        self.failure_reqs_count[self.service_params.substrate.url] = 0
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
             self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
