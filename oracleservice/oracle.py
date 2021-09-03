@@ -9,7 +9,7 @@ from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
 import logging
-
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,8 @@ class Oracle:
         Read the staking parameters for each stash account separately from the block where
         the era value is changed, generate the transaction body, sign and send to the parachain.
         """
-        logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
+        eraId = era.value['index']
+        logger.info(f"Active era index: {eraId}, start timestamp: {era.value['start']}")
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         stash_accounts = self._get_stash_accounts()
@@ -160,13 +161,13 @@ class Oracle:
         if block_hash is None:
             logger.error("Can't find the required block")
             raise BlockNotFound
-        logger.info(f"Block hash: {block_hash}")
+        
 
-        for stash_acc, era_id in stash_accounts:
+        for stash_acc, stash_eraId in stash_accounts:
             self.failure_reqs_count[self.service_params.substrate.url] += 1
             stash_acc = '0x' + stash_acc.hex()
-            logger.info(f"Current stash is {stash_acc}; era is {era_id}")
-            if era.value['index'] < era_id:
+            logger.info(f"Current stash is {stash_acc}; era is {stash_eraId}")
+            if eraId < stash_eraId:
                 logger.info(f"Current era less than the specified era for stash '{stash_acc}': skipping current era")
                 continue
 
@@ -179,15 +180,15 @@ class Oracle:
 
             logger.debug(';'.join([
                 f"stash: {stash_acc}",
-                f"era: {era.value['index']}",
+                f"era: {eraId}",
                 f"staking parameters: {staking_parameters}",
                 f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
                 f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
             ]))
 
-            tx = self._create_tx(era.value['index'], staking_parameters)
-            self._sign_and_send_to_para(tx, stash_acc)
-            self.last_era_reported[stash_acc] = era.value['index']
+            tx = self._create_tx(eraId, staking_parameters)
+            self._sign_and_send_to_para(tx, stash_acc, eraId)
+            self.last_era_reported[stash_acc] = eraId
 
         logger.info("Waiting for the next era")
         self.failure_reqs_count[self.service_params.substrate.url] = 0
@@ -200,7 +201,9 @@ class Oracle:
         block_number = era_id * self.service_params.era_duration + self.service_params.initial_block_number
 
         try:
-            return self.service_params.substrate.get_block_hash(block_number)
+            block_hash = self.service_params.substrate.get_block_hash(block_number)
+            logger.info(f"Block hash: {block_hash} number: {block_number}")
+            return block_hash
         except SubstrateRequestException:
             return None
 
@@ -213,8 +216,8 @@ class Oracle:
         staking_ledger_result = self._get_ledger_data(block_hash, stash)
         if staking_ledger_result is None:
             return {
-                'stash': stash,
-                'controller': stash,
+                'stashAccount': stash,
+                'controllerAccount': stash,
                 'stakeStatus': 3,  # this value means that stake status is None
                 'activeBalance': 0,
                 'totalBalance': 0,
@@ -229,8 +232,8 @@ class Oracle:
             unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
 
             return {
-                'stash': '0x' + ss58_decode(controller_info.value['stash']),
-                'controller': '0x' + ss58_decode(controller),
+                'stashAccount': '0x' + ss58_decode(controller_info.value['stash']),
+                'controllerAccount': '0x' + ss58_decode(controller),
                 'stakeStatus': stake_status,
                 'activeBalance': controller_info.value['active'],
                 'totalBalance': controller_info.value['total'],
@@ -279,6 +282,9 @@ class Oracle:
 
     def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
+        nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
+        logger.warning(f"nonce self:{self.nonce} chain:{nonce}")
+        
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
@@ -287,18 +293,35 @@ class Oracle:
                 staking_parameters,
                ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': self.nonce})
 
-    def _sign_and_send_to_para(self, tx: dict, stash: str):
+    def _sign_and_send_to_para(self, tx: dict, stash: str, eraId: int):
         """Sign transaction and send to parachain"""
+        
+        try:
+            self.service_params.w3.eth.call(dict((k, v) for k, v in tx.items() if v))
+            
+            del tx['from']
+        except ValueError as exc:
+            msg = exc.args[0]["message"] if isinstance(exc.args[0], dict) else str(exc)
+        
+            self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
+            logger.warning(f"Report for '{stash}' era {eraId} probably will fail  with {msg}")
+            return False
+            
+            
         tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.priv_key)
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
         tx_receipt = self.service_params.w3.eth.wait_for_transaction_receipt(tx_hash)
         self.nonce += 1
 
+        logger.debug(f"Transaction receipt: {tx_receipt}")
+        
         if tx_receipt.status == 1:
-            logger.debug(f"tx_hash: {tx_hash.hex()}")
-            logger.info(f"The report for stash {stash} was sent successfully")
+            logger.info(f"The report for stash '{stash}' era {eraId} was sent successfully")
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] -= 1
+            time.sleep(30)
+            return True
         else:
-            logger.warning(f"Transaction status for stash {stash} is reverted")
-            logger.debug(f"Transaction receipt: {tx_receipt}")
+            logger.warning(f"Transaction status for stash '{stash}' era {eraId} is reverted")
+            return False
+        
