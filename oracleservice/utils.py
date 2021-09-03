@@ -92,8 +92,8 @@ def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
             raise ABIFunctionNotFound("The contract does not contain the 'reportRelay' function")
 
         contract.functions.reportRelay(0, {
-            'stash': '',
-            'controller': '',
+            'stashAccount': '',
+            'controllerAccount': '',
             'stakeStatus': 0,
             'activeBalance': 0,
             'totalBalance': 0,
