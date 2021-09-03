@@ -25,6 +25,7 @@ class Oracle:
     default_mode_started: bool = False
     failure_reqs_count: dict = field(default_factory=dict)
     last_era_reported: dict = field(default_factory=dict)
+    previous_era_id: int = -1
     undesirable_urls: set = field(default_factory=set)
 
     def start_default_mode(self):
@@ -160,6 +161,8 @@ class Oracle:
         the era value is changed, generate the transaction body, sign and send to the parachain.
         """
         era_id = era.value['index']
+        if era_id == self.previous_era_id:
+            return
         logger.info(f"Active era index: {era_id}, start timestamp: {era.value['start']}")
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
@@ -203,6 +206,7 @@ class Oracle:
             self.last_era_reported[stash_acc] = era_id
 
         logger.info("Waiting for the next era")
+        self.previous_era_id = era_id
         self.failure_reqs_count[self.service_params.substrate.url] = 0
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
