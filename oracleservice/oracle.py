@@ -9,6 +9,7 @@ from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
 import logging
+import time
 
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,6 @@ class Oracle:
     default_mode_started: bool = False
     failure_reqs_count: dict = field(default_factory=dict)
     last_era_reported: dict = field(default_factory=dict)
-    nonce: int = 0
     undesirable_urls: set = field(default_factory=set)
 
     def start_default_mode(self):
@@ -45,7 +45,6 @@ class Oracle:
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
 
         self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
-        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
 
         self._start_era_monitoring()
 
@@ -142,6 +141,19 @@ class Oracle:
             subscription_handler=self._handle_era_change,
         )
 
+    def _wait_in_two_blocks(self, tx_receipt: dict):
+        if 'blockNumber' not in tx_receipt:
+            logger.error("The block number in transaction receipt was not found")
+            return
+
+        logger.info("Waiting in two blocks")
+        while True:
+            current_block = self.service_params.w3.eth.get_block('latest')
+            if current_block is not None and 'number' in current_block:
+                if current_block['number'] > tx_receipt['blockNumber']:
+                    break
+            time.sleep(1)
+
     def _handle_era_change(self, era, update_nr: int, subscription_id: str):
         """
         Read the staking parameters for each stash account separately from the block where
@@ -177,6 +189,7 @@ class Oracle:
             staking_parameters = self._read_staking_parameters(stash_acc, block_hash)
             self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
+            logger.info("The parameters are read. Preparing the transaction body.")
             logger.debug(';'.join([
                 f"stash: {stash_acc}",
                 f"era: {era.value['index']}",
@@ -186,8 +199,9 @@ class Oracle:
             ]))
 
             tx = self._create_tx(era.value['index'], staking_parameters)
-            self._sign_and_send_to_para(tx, stash_acc)
+            tx_receipt = self._sign_and_send_to_para(tx, stash_acc)
             self.last_era_reported[stash_acc] = era.value['index']
+            self._wait_in_two_blocks(tx_receipt)
 
         logger.info("Waiting for the next era")
         self.failure_reqs_count[self.service_params.substrate.url] = 0
@@ -279,21 +293,23 @@ class Oracle:
 
     def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
+        nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
+
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
                ).functions.reportRelay(
                 era_id,
                 staking_parameters,
-               ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': self.nonce})
+               ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': nonce})
 
-    def _sign_and_send_to_para(self, tx: dict, stash: str):
+    def _sign_and_send_to_para(self, tx: dict, stash: str) -> dict:
         """Sign transaction and send to parachain"""
         tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.priv_key)
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
+        logger.info(f"Sending a transaction for stash {stash}")
         tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
         tx_receipt = self.service_params.w3.eth.wait_for_transaction_receipt(tx_hash)
-        self.nonce += 1
 
         if tx_receipt.status == 1:
             logger.debug(f"tx_hash: {tx_hash.hex()}")
@@ -302,3 +318,5 @@ class Oracle:
         else:
             logger.warning(f"Transaction status for stash {stash} is reverted")
             logger.debug(f"Transaction receipt: {tx_receipt}")
+
+        return tx_receipt
