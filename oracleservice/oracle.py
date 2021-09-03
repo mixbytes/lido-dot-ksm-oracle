@@ -150,9 +150,9 @@ class Oracle:
         logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
-        stake_accounts = self._get_stash_accounts()
+        stash_accounts = self._get_stash_accounts()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
-        if not stake_accounts:
+        if not stash_accounts:
             logger.info("No stake accounts found: waiting for the next era")
             return
 
@@ -162,7 +162,7 @@ class Oracle:
             raise BlockNotFound
         logger.info(f"Block hash: {block_hash}")
 
-        for stash_acc, era_id in stake_accounts:
+        for stash_acc, era_id in stash_accounts:
             self.failure_reqs_count[self.service_params.substrate.url] += 1
             stash_acc = '0x' + stash_acc.hex()
             logger.info(f"Current stash is {stash_acc}; era is {era_id}")
@@ -214,7 +214,7 @@ class Oracle:
         if staking_ledger_result is None:
             return {
                 'stash': stash,
-                'controller': '',
+                'controller': stash,
                 'stakeStatus': 3,  # this value means that stake status is None
                 'activeBalance': 0,
                 'totalBalance': 0,
@@ -285,7 +285,7 @@ class Oracle:
                ).functions.reportRelay(
                 era_id,
                 staking_parameters,
-               ).buildTransaction({'gas': self.service_params.gas_limit, 'nonce': self.nonce})
+               ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': self.nonce})
 
     def _sign_and_send_to_para(self, tx: dict, stash: str):
         """Sign transaction and send to parachain"""
@@ -300,5 +300,5 @@ class Oracle:
             logger.info(f"The report for stash {stash} was sent successfully")
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] -= 1
         else:
-            logger.warning(f"Failed to send report for stash {stash}: tx status is {tx_receipt.status}")
-            logger.debug(f"tx_receipt: {tx_receipt}")
+            logger.warning(f"Transaction status for stash {stash} is reverted")
+            logger.debug(f"Transaction receipt: {tx_receipt}")
