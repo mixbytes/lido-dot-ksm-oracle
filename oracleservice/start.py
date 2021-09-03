@@ -3,12 +3,12 @@ from functools import partial
 from log import init_log
 from oracle import Oracle
 from service_parameters import ServiceParameters
-from substrateinterface import Keypair, SubstrateInterface
+from substrateinterface import SubstrateInterface
 from substrateinterface.exceptions import BlockNotFound
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import create_provider, get_abi, remove_invalid_urls
 from utils import check_abi, check_contract_address, check_log_level, perform_sanity_checks
-from web3.exceptions import ABIFunctionNotFound, TimeExhausted
+from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
 from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
@@ -65,9 +65,6 @@ def main():
         era_duration = int(os.getenv('ERA_DURATION', DEFAULT_ERA_DURATION))
         initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
 
-        stash = SubstrateInterfaceUtils.remove_invalid_ss58_addresses(ss58_format, (os.getenv('STASH_ACCOUNTS').split(',')))
-        stash_accounts = [Keypair(ss58_address=acc, ss58_format=ss58_format).public_key for acc in stash]
-
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
         if oracle_private_key is None:
             sys.exit("Failed to parse oracle private key")
@@ -97,7 +94,7 @@ def main():
         signal.signal(signal.SIGINT, partial(stop_signal_handler, substrate=substrate))
 
         check_contract_address(w3, contract_address)
-        check_abi(w3, contract_address, abi)
+        check_abi(w3, contract_address, abi, w3.eth.account.from_key(oracle_private_key).address)
 
     except (
         ABIFunctionNotFound,
@@ -117,7 +114,6 @@ def main():
         initial_block_number=initial_block_number,
         max_num_of_failure_reqs=max_number_of_failure_requests,
         para_id=para_id,
-        stash_accounts=stash_accounts,
         ss58_format=ss58_format,
         substrate=substrate,
         timeout=timeout,
@@ -140,6 +136,7 @@ def main():
             sys.exit(f"Error: {exc}")
 
         except (
+            BadFunctionCallOutput,
             BlockNotFound,
             ConnectionClosedError,
             ConnectionRefusedError,
@@ -147,6 +144,7 @@ def main():
             InvalidMessage,
             KeyError,
             TimeExhausted,
+            ValidationError,
             ValueError,
             WebSocketConnectionClosedException,
         ) as exc:

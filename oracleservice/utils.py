@@ -84,13 +84,28 @@ def check_contract_address(w3: Web3, contract_addr: str):
         raise ValueError("Incorrect contract address or the contract is not deployed")
 
 
-def check_abi(w3: Web3, contract_addr: str, abi: list):
+def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
+    """Check the provided ABI by checking JSON file and calling the contract methods"""
     contract = w3.eth.contract(address=contract_addr, abi=abi)
     try:
         if not hasattr(contract.functions, 'reportRelay'):
             raise ABIFunctionNotFound("The contract does not contain the 'reportRelay' function")
 
-        contract.functions.reportRelay(0, {'parachainBalance': 0, 'stakeLedger': []}).call()
+        contract.functions.reportRelay(0, {
+            'stashAccount': '',
+            'controllerAccount': '',
+            'stakeStatus': 0,
+            'activeBalance': 0,
+            'totalBalance': 0,
+            'unlocking': [],
+            'claimedRewards': [],
+            'stashBalance': 0,
+        }).call()
+
+        if not hasattr(contract.functions, 'getStashAccounts'):
+            raise ABIFunctionNotFound("The contract does not contain the 'getStashAccounts' function")
+
+        contract.functions.getStashAccounts().call()
 
     except ValueError:
         pass

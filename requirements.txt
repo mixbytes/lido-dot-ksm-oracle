@@ -1,2 +1,4 @@
 substrate-interface==0.13.12
 web3==5.23.0
+flake8==3.9.2
+pytest==6.2.4

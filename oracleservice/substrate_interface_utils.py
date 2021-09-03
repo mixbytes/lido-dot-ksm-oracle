@@ -98,6 +98,74 @@ class SubstrateInterfaceUtils:
             storage_function='ActiveEra',
         )
 
+    def get_validators(substrate: SubstrateInterface, block_hash: str = None):
+        """Get list of validators using 'Validators' storage function from 'Session' module"""
+        if block_hash is None:
+            return substrate.query(
+             module='Session',
+             storage_function='Validators',
+            )
+
+        return substrate.query(
+            module='Session',
+            storage_function='Validators',
+            block_hash=block_hash,
+        )
+
+    def get_nominators(substrate: SubstrateInterface, block_hash: str = None):
+        """Get list of nominators using 'Nominators' storage function from 'Staking' module"""
+        if block_hash:
+            return substrate.query_map(
+             module='Staking',
+             storage_function='Nominators',
+             block_hash=block_hash,
+            )
+
+        return substrate.query_map(
+            module='Staking',
+            storage_function='Nominators',
+        )
+
+    def get_account(substrate: SubstrateInterface, stash: str):
+        """Get account using 'Account' storage function from 'System' module"""
+        return substrate.query(
+             module='System',
+             storage_function='Account',
+             params=[stash],
+        )
+
+    def get_ledger(substrate: SubstrateInterface, controller: str, block_hash: str = None):
+        """Get ledger using 'Ledger' storage function from 'Staking' module"""
+        if block_hash is None:
+            return substrate.query(
+                module='Staking',
+                storage_function='Ledger',
+                params=[controller],
+            )
+
+        return substrate.query(
+            module='Staking',
+            storage_function='Ledger',
+            params=[controller],
+            block_hash=block_hash,
+        )
+
+    def get_controller(substrate: SubstrateInterface, stash: str, block_hash: str = None):
+        """Get controller using 'Bonded' storage function from 'Staking' module"""
+        if block_hash is None:
+            return substrate.query(
+                module='Staking',
+                storage_function='Bonded',
+                params=[stash],
+            )
+
+        return substrate.query(
+            module='Staking',
+            storage_function='Bonded',
+            params=[stash],
+            block_hash=block_hash,
+        )
+
     def get_parachain_address(_para_id: int, ss58_format: int) -> Keypair:
         """Get parachain address using parachain id with ss58 format provided"""
         prefix = b'para'

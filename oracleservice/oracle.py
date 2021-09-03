@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from service_parameters import ServiceParameters
-from substrateinterface.base import QueryMapResult
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface.utils.ss58 import ss58_decode
 from substrate_interface_utils import SubstrateInterfaceUtils
@@ -10,7 +9,7 @@ from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
 import logging
-
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,8 @@ class Oracle:
     account = None
     default_mode_started: bool = False
     failure_reqs_count: dict = field(default_factory=dict)
-    last_era_reported: int = -1
+    last_era_reported: dict = field(default_factory=dict)
+    nonce: int = 0
     undesirable_urls: set = field(default_factory=set)
 
     def start_default_mode(self):
@@ -36,27 +36,36 @@ class Oracle:
 
         logger.info("Starting default mode")
 
-        self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
         if self.service_params.substrate.url not in self.failure_reqs_count:
             self.failure_reqs_count[self.service_params.substrate.url] = 0
         if self.service_params.w3.provider.endpoint_uri not in self.failure_reqs_count:
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
 
+        self.failure_reqs_count[self.service_params.substrate.url] += 1
+        self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
+
+        self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
+        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
+
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
-        '''
-        Start of the Oracle recovery mode.
-        The current era id (CEI) from relay chain and the last era reported by Oracle (ORED)
-        from parachain are being compared. If CEI less than ORED, then do not send a report.
-        If failure requests counter exceeds the allowed value, reconnect to another node.
-        '''
+        """Start of the Oracle recovery mode."""
         logger.info("Starting recovery mode")
         self.default_mode_started = False
 
+        self._recover_connection_to_relaychain()
+        self._recover_connection_to_parachain()
+
+        logger.info("Recovery mode is completed")
+
+    def _recover_connection_to_relaychain(self):
+        """
+        Recover connection to relaychain.
+        If failure requests counter exceeds the allowed value, reconnect to another node.
+        """
         while True:
             try:
-                self.failure_reqs_count[self.service_params.substrate.url] += 1
                 if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_num_of_failure_reqs:
                     self.undesirable_urls.add(self.service_params.substrate.url)
                     self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
@@ -66,7 +75,29 @@ class Oracle:
                         timeout=self.service_params.timeout,
                         undesirable_urls=self.undesirable_urls,
                     )
+                break
 
+            except (
+                BadFunctionCallOutput,
+                ConnectionClosedError,
+                ConnectionRefusedError,
+                ConnectionResetError,
+                InvalidMessage,
+                WebSocketConnectionClosedException,
+            ) as exc:
+                logger.warning(f"Error: {exc}")
+                if self.service_params.substrate.url in self.failure_reqs_count:
+                    self.failure_reqs_count[self.service_params.substrate.url] += 1
+                else:
+                    self.failure_reqs_count[self.service_params.substrate.url] = 1
+
+    def _recover_connection_to_parachain(self):
+        """
+        Recover connection to parachain.
+        If failure requests counter exceeds the allowed value, reconnect to another node.
+        """
+        while True:
+            try:
                 if self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] > self.service_params.max_num_of_failure_reqs:
                     self.undesirable_urls.add(self.service_params.w3.provider.endpoint_uri)
                     self.service_params.w3 = create_provider(
@@ -74,10 +105,6 @@ class Oracle:
                         timeout=self.service_params.timeout,
                         undesirable_urls=self.undesirable_urls,
                     )
-
-                current_era = SubstrateInterfaceUtils.get_active_era(self.service_params.substrate)
-                self.last_era_reported = self._get_oracle_report_era()
-                self.failure_reqs_count[self.service_params.substrate.url] -= 1
                 break
 
             except (
@@ -95,26 +122,20 @@ class Oracle:
                     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
 
             except KeyError:
-                if self.service_params.substrate.url not in self.failure_reqs_count:
-                    self.failure_reqs_count[self.service_params.substrate.url] = 0
+                if self.service_params.w3.provider.endpoint_uri in self.failure_reqs_count:
+                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
                 else:
-                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
+                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
 
-        logger.debug(f"The last era reported by Oracle: {self.last_era_reported}")
-        if self.last_era_reported > current_era.value['index']:
-            logger.info("Current era less than the last era reported by Oracle: waiting for the next era")
-        else:
-            logger.info("Current era equals or greater than the last era reported by Oracle: create report for the current era")
-
-        logger.info("Recovery mode is completed")
-
-    def _get_oracle_report_era(self) -> int:
+    def _get_stash_accounts(self) -> list:
+        """Get list of stash accounts and the last era reported using 'getStashAccounts' function"""
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
-               ).functions.ORED().call()
+               ).functions.getStashAccounts().call()
 
     def _start_era_monitoring(self):
+        """Start monitoring an era change event"""
         self.service_params.substrate.query(
             module='Staking',
             storage_function='ActiveEra',
@@ -122,218 +143,182 @@ class Oracle:
         )
 
     def _handle_era_change(self, era, update_nr: int, subscription_id: str):
-        '''
-        Read the staking parameters from the block where the era value is changed,
-        generate the transaction body, sign and send to the parachain.
-        '''
+        """
+        Read the staking parameters for each stash account separately from the block where
+        the era value is changed, generate the transaction body, sign and send to the parachain.
+        """
+        eraId = era.value['index']
+        logger.info(f"Active era index: {eraId}, start timestamp: {era.value['start']}")
+
         self.failure_reqs_count[self.service_params.substrate.url] += 1
-        if self.last_era_reported == -1:
-            self.last_era_reported = self._get_oracle_report_era()
-
-        logger.info(f"Active era index: {era.value['index']}, start timestamp: {era.value['start']}")
-
-        if era.value['index'] < self.last_era_reported:
-            logger.info("Current era less than the last era reported by Oracle: waiting for the next era")
+        stash_accounts = self._get_stash_accounts()
+        self.failure_reqs_count[self.service_params.substrate.url] -= 1
+        if not stash_accounts:
+            logger.info("No stake accounts found: waiting for the next era")
             return
 
         block_hash = self._find_start_block(era.value['index'])
         if block_hash is None:
             logger.error("Can't find the required block")
             raise BlockNotFound
-        logger.info(f"Block hash: {block_hash}")
 
-        parachain_balance = SubstrateInterfaceUtils.get_parachain_balance(
-            self.service_params.substrate,
-            self.service_params.para_id,
-            block_hash,
-        )
-        staking_parameters = self._read_staking_parameters(block_hash)
-        if not staking_parameters:
-            logger.warning("No staking parameters found")
-            return
+        for stash_acc, stash_eraId in stash_accounts:
+            self.failure_reqs_count[self.service_params.substrate.url] += 1
+            stash_acc = '0x' + stash_acc.hex()
+            logger.info(f"Current stash is {stash_acc}; era is {stash_eraId}")
+            if eraId < stash_eraId:
+                logger.info(f"Current era less than the specified era for stash '{stash_acc}': skipping current era")
+                continue
 
-        self.failure_reqs_count[self.service_params.substrate.url] -= 1
-        logger.debug(';'.join([
-            f"era: {era.value['index'] - 1}",
-            f"parachain_balance: {parachain_balance}",
-            f"staking parameters: {staking_parameters}",
-            f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
-            f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
-        ]))
+            if stash_acc in self.last_era_reported and self.last_era_reported[stash_acc] >= era.value['index']:
+                logger.info(f"The report has already been sent for stash {stash_acc}")
+                continue
 
-        tx = self._create_tx(era.value['index'], parachain_balance, staking_parameters)
-        self._sign_and_send_to_para(tx)
+            staking_parameters = self._read_staking_parameters(stash_acc, block_hash)
+            self.failure_reqs_count[self.service_params.substrate.url] -= 1
+
+            logger.debug(';'.join([
+                f"stash: {stash_acc}",
+                f"era: {eraId}",
+                f"staking parameters: {staking_parameters}",
+                f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
+                f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
+            ]))
+
+            tx = self._create_tx(eraId, staking_parameters)
+            self._sign_and_send_to_para(tx, stash_acc, eraId)
+            self.last_era_reported[stash_acc] = eraId
+
         logger.info("Waiting for the next era")
+        self.failure_reqs_count[self.service_params.substrate.url] = 0
+        self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
+        if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
+            self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
 
     def _find_start_block(self, era_id: int) -> str:
         """Find the hash of the block at which the era change occurs"""
         block_number = era_id * self.service_params.era_duration + self.service_params.initial_block_number
 
         try:
-            return self.service_params.substrate.get_block_hash(block_number)
+            block_hash = self.service_params.substrate.get_block_hash(block_number)
+            logger.info(f"Block hash: {block_hash} number: {block_number}")
+            return block_hash
         except SubstrateRequestException:
             return None
 
-    def _read_staking_parameters(self, block_hash=None) -> list:
+    def _read_staking_parameters(self, stash: str, block_hash: str = None) -> dict:
         """Read staking parameters from specific block or from the head"""
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
 
-        staking_ledger_result = self._get_ledger_data(block_hash)
-
-        session_validators_result = self.service_params.substrate.query(
-            module='Session',
-            storage_function='Validators',
-            block_hash=block_hash,
-        )
-
-        staking_nominators_result = self.service_params.substrate.query_map(
-            module='Staking',
-            storage_function='Nominators',
-            block_hash=block_hash,
-        )
-
-        stash_balances = self._get_stash_balances()
-
-        stash_statuses = self._get_stash_statuses(
-            staking_ledger_result,
-            session_validators_result,
-            staking_nominators_result,
-        )
-
-        staking_parameters = []
-
-        for controller, controller_info in staking_ledger_result.items():
-            unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
-
-            stash_addr = '0x' + ss58_decode(controller_info.value['stash'])
-            controller_addr = '0x' + ss58_decode(controller)
-
-            staking_parameters.append({
-                'stash': stash_addr,
-                'controller': controller_addr,
-                'stakeStatus': stash_statuses[controller_info.value['stash']],
-                'activeBalance': controller_info.value['active'],
-                'totalBalance': controller_info.value['total'],
-                'unlocking': unlocking_values,
-                'claimedRewards': controller_info.value['claimedRewards'],
-                'stashBalance': stash_balances[stash_addr],
-            })
-
-        staking_parameters = self._add_not_founded_stashes(staking_parameters, stash_balances)
-
-        staking_parameters.sort(key=lambda e: e['stash'])
-        return staking_parameters
-
-    def _get_ledger_data(self, block_hash: str) -> dict:
-        """Get ledger data using stash accounts list"""
-        ledger_data = {}
-
-        for stash in self.service_params.stash_accounts:
-            controller = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='Bonded',
-                params=[stash],
-                block_hash=block_hash,
-            )
-
-            if controller.value is None:
-                continue
-
-            staking_ledger = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='Ledger',
-                params=[controller.value],
-                block_hash=block_hash,
-            )
-
-            ledger_data[controller.value] = staking_ledger
-
-        return ledger_data
-
-    def _get_stash_balances(self) -> dict:
-        """Get stash accounts free balances"""
-        balances = {}
-
-        for stash in self.service_params.stash_accounts:
-            result = self.service_params.substrate.query(
-                module='System',
-                storage_function='Account',
-                params=[stash]
-            )
-
-            balances[stash] = result.value['data']['free']
-
-        return balances
-
-    def _get_stash_statuses(self, controllers_: dict, validators_, nominators_: QueryMapResult) -> dict:
-        '''
-        Get stash accounts statuses.
-        0 - Chill, 1 - Nominator, 2 - Validator
-        '''
-        statuses = {}
-        nominators = set(nominator.value for nominator, _ in nominators_)
-        validators = set(validator for validator in validators_.value)
-
-        for controller_info in controllers_.values():
-            stash_account = controller_info.value['stash']
-            if stash_account in nominators:
-                statuses[stash_account] = 1
-                continue
-
-            if stash_account in validators:
-                statuses[stash_account] = 2
-                continue
-
-            statuses[stash_account] = 0
-
-        return statuses
-
-    def _add_not_founded_stashes(self, staking_parameters: list, stash_balances: dict) -> list:
-        """Add information about not founded stash accounts to the report"""
-        staking_params_set = set([elem['stash'] for elem in staking_parameters])
-        for stash in self.service_params.stash_accounts:
-            if stash in staking_params_set:
-                continue
-
-            staking_parameters.append({
-                'stash': stash,
-                'controller': '',
-                'stakeStatus': 0,
+        stash_free_balance = self._get_stash_free_balance(stash)
+        staking_ledger_result = self._get_ledger_data(block_hash, stash)
+        if staking_ledger_result is None:
+            return {
+                'stashAccount': stash,
+                'controllerAccount': stash,
+                'stakeStatus': 3,  # this value means that stake status is None
                 'activeBalance': 0,
                 'totalBalance': 0,
                 'unlocking': [],
                 'claimedRewards': [],
-                'stashBalance': stash_balances[stash],
-            })
+                'stashBalance': stash_free_balance,
+            }
 
-        return staking_parameters
+        stake_status = self._get_stake_status(stash, block_hash)
 
-    def _create_tx(self, era_id: int, parachain_balance: int, staking_parameters: list) -> dict:
+        for controller, controller_info in staking_ledger_result.items():
+            unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
+
+            return {
+                'stashAccount': '0x' + ss58_decode(controller_info.value['stash']),
+                'controllerAccount': '0x' + ss58_decode(controller),
+                'stakeStatus': stake_status,
+                'activeBalance': controller_info.value['active'],
+                'totalBalance': controller_info.value['total'],
+                'unlocking': unlocking_values,
+                'claimedRewards': controller_info.value['claimedRewards'],
+                'stashBalance': stash_free_balance,
+            }
+
+    def _get_ledger_data(self, block_hash: str, stash: str) -> dict:
+        """Get ledger data using stash account address"""
+        controller = SubstrateInterfaceUtils.get_controller(self.service_params.substrate, stash, block_hash)
+        if controller.value is None:
+            return None
+
+        ledger = SubstrateInterfaceUtils.get_ledger(self.service_params.substrate, controller.value, block_hash)
+
+        return {controller.value: ledger}
+
+    def _get_stash_free_balance(self, stash: str) -> dict:
+        """Get stash accounts free balances"""
+        account = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash)
+
+        return account.value['data']['free']
+
+    def _get_stake_status(self, stash: str, block_hash: str = None) -> int:
+        """
+        Get stash account status.
+        0 - Chill, 1 - Nominator, 2 - Validator
+        """
+        if block_hash is None:
+            block_hash = self.service_params.substrate.get_chain_head()
+
+        staking_validators = SubstrateInterfaceUtils.get_validators(self.service_params.substrate, block_hash)
+        staking_nominators = SubstrateInterfaceUtils.get_nominators(self.service_params.substrate, block_hash)
+
+        nominators = set(nominator.value for nominator, _ in staking_nominators)
+        validators = set(validator for validator in staking_validators.value)
+
+        if stash in nominators:
+            return 1
+
+        if stash in validators:
+            return 2
+
+        return 0
+
+    def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
-        nonce = self.service_params.w3.eth.getTransactionCount(self.account.address)
+        nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
+        logger.warning(f"nonce self:{self.nonce} chain:{nonce}")
 
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
                ).functions.reportRelay(
                 era_id,
-                {'parachainBalance': parachain_balance, 'stakeLedger': staking_parameters},
-               ).buildTransaction({'gas': self.service_params.gas_limit, 'nonce': nonce})
+                staking_parameters,
+               ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': self.nonce})
 
-    def _sign_and_send_to_para(self, tx: dict):
+    def _sign_and_send_to_para(self, tx: dict, stash: str, eraId: int):
         """Sign transaction and send to parachain"""
-        tx_signed = self.service_params.w3.eth.account.signTransaction(tx, private_key=self.priv_key)
+
+        try:
+            self.service_params.w3.eth.call(dict((k, v) for k, v in tx.items() if v))
+
+            del tx['from']
+        except ValueError as exc:
+            msg = exc.args[0]["message"] if isinstance(exc.args[0], dict) else str(exc)
+
+            self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
+            logger.warning(f"Report for '{stash}' era {eraId} probably will fail  with {msg}")
+            return False
+
+        tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.priv_key)
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
-        tx_hash = self.service_params.w3.eth.sendRawTransaction(tx_signed.rawTransaction)
-        tx_receipt = self.service_params.w3.eth.waitForTransactionReceipt(tx_hash)
+        tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
+        tx_receipt = self.service_params.w3.eth.wait_for_transaction_receipt(tx_hash)
+        self.nonce += 1
+
+        logger.debug(f"Transaction receipt: {tx_receipt}")
 
         if tx_receipt.status == 1:
-            logger.debug(f"tx_hash: {tx_hash.hex()}")
-            logger.info("The report was sent successfully. Resetting failure requests counter")
-            self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
-            if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
-                self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
+            logger.info(f"The report for stash '{stash}' era {eraId} was sent successfully")
+            self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] -= 1
+            time.sleep(30)
+            return True
         else:
-            logger.warning(f"Failed to send transaction: {tx_receipt.status}")
-            logger.debug(f"tx_receipt: {tx_receipt}")
+            logger.warning(f"Transaction status for stash '{stash}' era {eraId} is reverted")
+            return False
