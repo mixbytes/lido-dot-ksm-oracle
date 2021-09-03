@@ -161,7 +161,6 @@ class Oracle:
         if block_hash is None:
             logger.error("Can't find the required block")
             raise BlockNotFound
-        
 
         for stash_acc, stash_eraId in stash_accounts:
             self.failure_reqs_count[self.service_params.substrate.url] += 1
@@ -284,7 +283,7 @@ class Oracle:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
         nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
         logger.warning(f"nonce self:{self.nonce} chain:{nonce}")
-        
+
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
@@ -295,19 +294,18 @@ class Oracle:
 
     def _sign_and_send_to_para(self, tx: dict, stash: str, eraId: int):
         """Sign transaction and send to parachain"""
-        
+
         try:
             self.service_params.w3.eth.call(dict((k, v) for k, v in tx.items() if v))
-            
+
             del tx['from']
         except ValueError as exc:
             msg = exc.args[0]["message"] if isinstance(exc.args[0], dict) else str(exc)
-        
+
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
             logger.warning(f"Report for '{stash}' era {eraId} probably will fail  with {msg}")
             return False
-            
-            
+
         tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.priv_key)
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
@@ -315,7 +313,7 @@ class Oracle:
         self.nonce += 1
 
         logger.debug(f"Transaction receipt: {tx_receipt}")
-        
+
         if tx_receipt.status == 1:
             logger.info(f"The report for stash '{stash}' era {eraId} was sent successfully")
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] -= 1
@@ -324,4 +322,3 @@ class Oracle:
         else:
             logger.warning(f"Transaction status for stash '{stash}' era {eraId} is reverted")
             return False
-        
