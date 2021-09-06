@@ -1,4 +1,5 @@
 from os.path import exists
+from substrateinterface import SubstrateInterface
 from web3 import Web3
 from web3.auto import w3
 from web3.exceptions import ABIFunctionNotFound
@@ -6,6 +7,9 @@ from websocket._exceptions import WebSocketAddressException
 
 import json
 import logging
+import socket
+import sys
+import threading as th
 import time
 import urllib
 
@@ -28,6 +32,30 @@ NON_NEGATIVE_PARAMETERS = (
     'PARA_ID',
     'TIMEOUT',
 )
+
+
+def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, timer: th.Timer = None):
+    """Handle signal, close substrate interface websocket connection, if it is open, stop timer thread and terminate the process"""
+    logger.debug(f"Receiving signal: {sig}")
+    if substrate is not None:
+        logger.debug("Closing substrate interface websocket connection")
+        try:
+            substrate.websocket.sock.shutdown(socket.SHUT_RDWR)
+        except (
+            OSError,
+        ) as exc:
+            logger.warning(exc)
+        else:
+            logger.debug(f"Connection to relaychain node {substrate.url} is closed")
+
+    # TODO handle this
+    if timer is not None:
+        try:
+            timer.join()
+        except RuntimeError:
+            ...
+
+    sys.exit()
 
 
 def create_provider(urls: list, timeout: int = 60, undesirable_urls: set = set()) -> Web3:

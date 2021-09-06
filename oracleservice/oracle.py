@@ -9,6 +9,7 @@ from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
 import logging
+import socket
 import threading as th
 import time
 
@@ -85,6 +86,7 @@ class Oracle:
 
             except (
                 BadFunctionCallOutput,
+                BrokenPipeError,
                 ConnectionClosedError,
                 ConnectionRefusedError,
                 ConnectionResetError,
@@ -115,6 +117,7 @@ class Oracle:
 
             except (
                 BadFunctionCallOutput,
+                BrokenPipeError,
                 ConnectionClosedError,
                 ConnectionRefusedError,
                 ConnectionResetError,
@@ -149,8 +152,16 @@ class Oracle:
         )
 
     def _close_connection_to_relaychain(self):
+        """Close connection to relaychain node, increase failure requests counter and exit"""
         self.failure_reqs_count[self.service_params.substrate.url] += 1
-        self.service_params.substrate.websocket.close()
+        logger.debug(f"Closing connection to relaychain node: {self.service_params.substrate.url}")
+        try:
+            self.service_params.substrate.websocket.sock.shutdown(socket.SHUT_RDWR)
+        except (
+            OSError,
+        ) as exc:
+            logger.warning(exc)
+
         exit()
 
     def _create_watchdog(self):
@@ -259,7 +270,7 @@ class Oracle:
                 'stashBalance': stash_free_balance,
             }
 
-        stake_status = self._get_stake_status(stash, block_hash)
+        stake_status = self._get_ledger_status(stash, block_hash)
 
         for controller, controller_info in staking_ledger_result.items():
             unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
@@ -291,10 +302,10 @@ class Oracle:
 
         return account.value['data']['free']
 
-    def _get_stake_status(self, stash: str, block_hash: str = None) -> int:
+    def _get_ledger_status(self, stash: str, block_hash: str = None) -> int:
         """
         Get stash account status.
-        0 - Chill, 1 - Nominator, 2 - Validator
+        0 - Idle, 1 - Nominator, 2 - Validator
         """
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
