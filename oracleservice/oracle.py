@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from service_parameters import ServiceParameters
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
-from substrateinterface.utils.ss58 import ss58_decode
+from substrateinterface import Keypair
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import create_provider
 from web3.exceptions import BadFunctionCallOutput
@@ -164,21 +164,22 @@ class Oracle:
 
         for stash_acc, stash_eraId in stash_accounts:
             self.failure_reqs_count[self.service_params.substrate.url] += 1
-            stash_acc = '0x' + stash_acc.hex()
-            logger.info(f"Current stash is {stash_acc}; era is {stash_eraId}")
+            stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
+
+            logger.info(f"Current stash is {stash.ss58_address}; era is {stash_eraId}")
             if eraId < stash_eraId:
-                logger.info(f"Current era less than the specified era for stash '{stash_acc}': skipping current era")
+                logger.info(f"Current era less than the specified era for stash '{stash.ss58_address}': skipping current era")
                 continue
 
-            if stash_acc in self.last_era_reported and self.last_era_reported[stash_acc] >= era.value['index']:
-                logger.info(f"The report has already been sent for stash {stash_acc}")
+            if self.last_era_reported.get(stash.public_key, 0) >= era.value['index']:
+                logger.info(f"The report has already been sent for stash {stash.ss58_address}")
                 continue
 
-            staking_parameters = self._read_staking_parameters(stash_acc, block_hash)
+            staking_parameters = self._read_staking_parameters(stash, block_hash)
             self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
-            logger.debug(';'.join([
-                f"stash: {stash_acc}",
+            logger.info(';'.join([
+                f"stash: {stash.ss58_address}",
                 f"era: {eraId}",
                 f"staking parameters: {staking_parameters}",
                 f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
@@ -186,8 +187,8 @@ class Oracle:
             ]))
 
             tx = self._create_tx(eraId, staking_parameters)
-            self._sign_and_send_to_para(tx, stash_acc, eraId)
-            self.last_era_reported[stash_acc] = eraId
+            self._sign_and_send_to_para(tx, stash, eraId)
+            self.last_era_reported[stash.public_key] = eraId
 
         logger.info("Waiting for the next era")
         self.failure_reqs_count[self.service_params.substrate.url] = 0
@@ -206,17 +207,19 @@ class Oracle:
         except SubstrateRequestException:
             return None
 
-    def _read_staking_parameters(self, stash: str, block_hash: str = None) -> dict:
+    def _read_staking_parameters(self, stash: Keypair, block_hash: str = None) -> dict:
         """Read staking parameters from specific block or from the head"""
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
 
         stash_free_balance = self._get_stash_free_balance(stash)
+        stake_status = self._get_stake_status(stash, block_hash)
+
         staking_ledger_result = self._get_ledger_data(block_hash, stash)
         if staking_ledger_result is None:
             return {
-                'stashAccount': stash,
-                'controllerAccount': stash,
+                'stashAccount': stash.public_key,
+                'controllerAccount': stash.public_key,
                 'stakeStatus': 3,  # this value means that stake status is None
                 'activeBalance': 0,
                 'totalBalance': 0,
@@ -225,42 +228,44 @@ class Oracle:
                 'stashBalance': stash_free_balance,
             }
 
-        stake_status = self._get_stake_status(stash, block_hash)
+        controller = staking_ledger_result['controller']
 
-        for controller, controller_info in staking_ledger_result.items():
-            unlocking_values = [{'balance': elem['value'], 'era': elem['era']} for elem in controller_info.value['unlocking']]
+        return {
+            'stashAccount': stash.public_key,
+            'controllerAccount': controller.public_key,
+            'stakeStatus': stake_status,
+            'activeBalance': staking_ledger_result['active'],
+            'totalBalance': staking_ledger_result['total'],
+            'unlocking': [{'balance': elem['value'], 'era': elem['era']} for elem in staking_ledger_result['unlocking']],
+            'claimedRewards': staking_ledger_result['claimedRewards'],
+            'stashBalance': stash_free_balance,
+        }
 
-            return {
-                'stashAccount': '0x' + ss58_decode(controller_info.value['stash']),
-                'controllerAccount': '0x' + ss58_decode(controller),
-                'stakeStatus': stake_status,
-                'activeBalance': controller_info.value['active'],
-                'totalBalance': controller_info.value['total'],
-                'unlocking': unlocking_values,
-                'claimedRewards': controller_info.value['claimedRewards'],
-                'stashBalance': stash_free_balance,
-            }
-
-    def _get_ledger_data(self, block_hash: str, stash: str) -> dict:
+    def _get_ledger_data(self, block_hash: str, stash: Keypair) -> dict:
         """Get ledger data using stash account address"""
         controller = SubstrateInterfaceUtils.get_controller(self.service_params.substrate, stash, block_hash)
         if controller.value is None:
             return None
 
-        ledger = SubstrateInterfaceUtils.get_ledger(self.service_params.substrate, controller.value, block_hash)
+        controller = Keypair(ss58_address=controller.value)
 
-        return {controller.value: ledger}
+        ledger = SubstrateInterfaceUtils.get_ledger(self.service_params.substrate, controller, block_hash)
 
-    def _get_stash_free_balance(self, stash: str) -> dict:
+        result = {'controller': controller, 'stash': stash}
+        result.update(ledger.value)
+
+        return result
+
+    def _get_stash_free_balance(self, stash: Keypair) -> dict:
         """Get stash accounts free balances"""
         account = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash)
 
         return account.value['data']['free']
 
-    def _get_stake_status(self, stash: str, block_hash: str = None) -> int:
+    def _get_stake_status(self, stash: Keypair, block_hash: str = None) -> int:
         """
         Get stash account status.
-        0 - Chill, 1 - Nominator, 2 - Validator
+        0 - Chill, 1 - Nominator, 2 - Validator, 3 - None
         """
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
@@ -271,10 +276,10 @@ class Oracle:
         nominators = set(nominator.value for nominator, _ in staking_nominators)
         validators = set(validator for validator in staking_validators.value)
 
-        if stash in nominators:
+        if stash.ss58_address in nominators:
             return 1
 
-        if stash in validators:
+        if stash.ss58_address in validators:
             return 2
 
         return 0
@@ -282,7 +287,7 @@ class Oracle:
     def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
         nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
-        logger.warning(f"nonce self:{self.nonce} chain:{nonce}")
+        logger.info(f"nonce self:{self.nonce} chain:{nonce}")
 
         return self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
@@ -292,7 +297,7 @@ class Oracle:
                 staking_parameters,
                ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': self.nonce})
 
-    def _sign_and_send_to_para(self, tx: dict, stash: str, eraId: int):
+    def _sign_and_send_to_para(self, tx: dict, stash: Keypair, eraId: int):
         """Sign transaction and send to parachain"""
 
         try:
