@@ -42,6 +42,7 @@ def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, t
         try:
             substrate.websocket.sock.shutdown(socket.SHUT_RDWR)
         except (
+            AttributeError,
             OSError,
         ) as exc:
             logger.warning(exc)

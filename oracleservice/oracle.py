@@ -158,6 +158,7 @@ class Oracle:
         try:
             self.service_params.substrate.websocket.sock.shutdown(socket.SHUT_RDWR)
         except (
+            AttributeError,
             OSError,
         ) as exc:
             logger.warning(exc)
@@ -189,16 +190,16 @@ class Oracle:
         if era_id == self.previous_era_id:
             return
 
-        self.watchdog.cancel()
-        self._create_watchdog()
-        self.watchdog.start()
-
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         stash_accounts = self._get_stash_accounts()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
         if not stash_accounts:
             logger.info("No stake accounts found: waiting for the next era")
             return
+
+        self.watchdog.cancel()
+        self._create_watchdog()
+        self.watchdog.start()
 
         block_hash = self._find_start_block(era.value['index'])
         if block_hash is None:
