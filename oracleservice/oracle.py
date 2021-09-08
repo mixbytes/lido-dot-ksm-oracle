@@ -9,9 +9,11 @@ from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
 import logging
+import signal
 import socket
 import threading as th
 import time
+import sys
 
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,7 @@ class Oracle:
 
     def __post_init__(self):
         self._create_watchdog()
+        signal.signal(signal.SIGALRM, self._close_connection_to_relaychain)
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -151,7 +154,11 @@ class Oracle:
             subscription_handler=self._handle_era_change,
         )
 
-    def _close_connection_to_relaychain(self):
+    def _handle_watchdog_tick(self):
+        signal.alarm(self.service_params.era_duration_in_seconds)
+        sys.exit()
+
+    def _close_connection_to_relaychain(self, sig: int = signal.SIGINT, frame=None):
         """Close connection to relaychain node, increase failure requests counter and exit"""
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         logger.debug(f"Closing connection to relaychain node: {self.service_params.substrate.url}")
@@ -163,10 +170,13 @@ class Oracle:
         ) as exc:
             logger.warning(exc)
 
-        exit()
+        if sig == signal.SIGALRM:
+            raise BrokenPipeError
+
+        sys.exit()
 
     def _create_watchdog(self):
-        self.watchdog = th.Timer(self.service_params.era_duration_in_seconds, self._close_connection_to_relaychain)
+        self.watchdog = th.Timer(1, self._handle_watchdog_tick)
 
     def _wait_in_two_blocks(self, tx_receipt: dict):
         if 'blockNumber' not in tx_receipt:
@@ -186,9 +196,14 @@ class Oracle:
         Read the staking parameters for each stash account separately from the block where
         the era value is changed, generate the transaction body, sign and send to the parachain.
         """
+        self.watchdog.cancel()
+        self._create_watchdog()
+        self.watchdog.start()
+
         era_id = era.value['index']
         if era_id == self.previous_era_id:
             return
+        logger.info(f"Active era index: {era_id}, start timestamp: {era.value['start']}")
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         stash_accounts = self._get_stash_accounts()
@@ -196,10 +211,6 @@ class Oracle:
         if not stash_accounts:
             logger.info("No stake accounts found: waiting for the next era")
             return
-
-        self.watchdog.cancel()
-        self._create_watchdog()
-        self.watchdog.start()
 
         block_hash = self._find_start_block(era.value['index'])
         if block_hash is None:

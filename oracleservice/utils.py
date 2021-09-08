@@ -49,12 +49,13 @@ def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, t
         else:
             logger.debug(f"Connection to relaychain node {substrate.url} is closed")
 
-    # TODO handle this
     if timer is not None:
         try:
-            timer.join()
-        except RuntimeError:
-            ...
+            if timer.is_alive():
+                timer.cancel()
+
+        except Exception as exc:
+            logger.warning(exc)
 
     sys.exit()
 
