@@ -237,7 +237,7 @@ class Oracle:
             'activeBalance': staking_ledger_result['active'],
             'totalBalance': staking_ledger_result['total'],
             'unlocking': [{'balance': elem['value'], 'era': elem['era']} for elem in staking_ledger_result['unlocking']],
-            'claimedRewards': staking_ledger_result['claimedRewards'],
+            'claimedRewards': [], # put aside until storage proof has been implemented // staking_ledger_result['claimedRewards'],
             'stashBalance': stash_free_balance,
         }
 
@@ -256,7 +256,7 @@ class Oracle:
 
         return result
 
-    def _get_stash_free_balance(self, stash: Keypair) -> dict:
+    def _get_stash_free_balance(self, stash: Keypair) -> int:
         """Get stash accounts free balances"""
         account = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash)
 
@@ -297,7 +297,7 @@ class Oracle:
                 staking_parameters,
                ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': self.nonce})
 
-    def _sign_and_send_to_para(self, tx: dict, stash: Keypair, eraId: int):
+    def _sign_and_send_to_para(self, tx: dict, stash: Keypair, eraId: int) -> bool:
         """Sign transaction and send to parachain"""
 
         try:
@@ -320,10 +320,10 @@ class Oracle:
         logger.debug(f"Transaction receipt: {tx_receipt}")
 
         if tx_receipt.status == 1:
-            logger.info(f"The report for stash '{stash}' era {eraId} was sent successfully")
+            logger.info(f"The report for stash '{stash.ss58_address}' era {eraId} was sent successfully")
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] -= 1
             time.sleep(30)
             return True
         else:
-            logger.warning(f"Transaction status for stash '{stash}' era {eraId} is reverted")
+            logger.warning(f"Transaction status for stash '{stash.ss58_address}' era {eraId} is reverted")
             return False
