@@ -155,6 +155,7 @@ class Oracle:
         )
 
     def _handle_watchdog_tick(self):
+        """Start the timer for SIGALRM and end the thread"""
         signal.alarm(self.service_params.era_duration_in_seconds)
         sys.exit()
 
@@ -176,9 +177,11 @@ class Oracle:
         sys.exit()
 
     def _create_watchdog(self):
+        """Create watchdog as a Timer"""
         self.watchdog = th.Timer(1, self._handle_watchdog_tick)
 
     def _wait_in_two_blocks(self, tx_receipt: dict):
+        """Wait for two blocks based on information from web3"""
         if 'blockNumber' not in tx_receipt:
             logger.error("The block number in transaction receipt was not found")
             return
@@ -294,7 +297,7 @@ class Oracle:
             'activeBalance': staking_ledger_result['active'],
             'totalBalance': staking_ledger_result['total'],
             'unlocking': [{'balance': elem['value'], 'era': elem['era']} for elem in staking_ledger_result['unlocking']],
-            'claimedRewards': staking_ledger_result['claimedRewards'],
+            'claimedRewards': [],
             'stashBalance': stash_free_balance,
         }
 
