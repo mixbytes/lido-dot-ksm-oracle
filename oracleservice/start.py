@@ -4,10 +4,9 @@ from log import init_log
 from oracle import Oracle
 from prometheus_client import start_http_server
 from service_parameters import ServiceParameters
-from substrateinterface import SubstrateInterface
 from substrateinterface.exceptions import BlockNotFound
 from substrate_interface_utils import SubstrateInterfaceUtils
-from utils import create_provider, get_abi, remove_invalid_urls
+from utils import create_provider, get_abi, remove_invalid_urls, stop_signal_handler
 from utils import check_abi, check_contract_address, check_log_level, perform_sanity_checks
 from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
 from websocket._exceptions import WebSocketConnectionClosedException
@@ -21,23 +20,14 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ERA_DURATION = 30
+DEFAULT_ERA_DURATION_IN_BLOCKS = 30
+DEFAULT_ERA_DURATION_IN_SECONDS = 180
 DEFAULT_GAS_LIMIT = 10000000
 DEFAULT_INITIAL_BLOCK_NUMBER = 1
 DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
 DEFAULT_PROMETHEUS_METRICS_PORT = 8000
 DEFAULT_TIMEOUT = 60
-
-
-def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None):
-    """Handle signal, close substrate interface websocket connection, if it is open, and terminate the process"""
-    logger.debug(f"Receiving signal: {sig}")
-    if substrate is not None:
-        logger.debug("Closing substrate interface websocket connection")
-        substrate.websocket.shutdown()
-        logger.debug("Connection closed")
-
-    sys.exit()
+DEFAULT_WATCHDOG_DELAY = 5
 
 
 def main():
@@ -68,8 +58,10 @@ def main():
             DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS,
         ))
         timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
+        watchdog_delay = int(os.getenv('WATCHDOG_DELAY', DEFAULT_WATCHDOG_DELAY))
 
-        era_duration = int(os.getenv('ERA_DURATION', DEFAULT_ERA_DURATION))
+        era_duration_in_blocks = int(os.getenv('ERA_DURATION_IN_BLOCKS', DEFAULT_ERA_DURATION_IN_BLOCKS))
+        era_duration_in_seconds = int(os.getenv('ERA_DURATION_IN_SECONDS', DEFAULT_ERA_DURATION_IN_SECONDS))
         initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
 
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
@@ -79,13 +71,15 @@ def main():
         perform_sanity_checks(
             abi_path=abi_path,
             contract_address=contract_address,
-            era_duration=era_duration,
+            era_duration_in_blocks=era_duration_in_blocks,
+            era_duration_in_seconds=era_duration_in_seconds,
             gas_limit=gas_limit,
             initial_block_number=initial_block_number,
             max_number_of_failure_requests=max_number_of_failure_requests,
             para_id=para_id,
             private_key=oracle_private_key,
             timeout=timeout,
+            watchdog_delay=watchdog_delay,
             ws_url_para=ws_url_para,
             ws_url_relay=ws_url_relay,
         )
@@ -97,15 +91,35 @@ def main():
         w3 = create_provider(ws_url_para, timeout)
         substrate = SubstrateInterfaceUtils.create_interface(ws_url_relay, ss58_format, type_registry_preset)
 
-        signal.signal(signal.SIGTERM, partial(stop_signal_handler, substrate=substrate))
-        signal.signal(signal.SIGINT, partial(stop_signal_handler, substrate=substrate))
-
         check_contract_address(w3, contract_address)
         check_abi(w3, contract_address, abi, w3.eth.account.from_key(oracle_private_key).address)
+
+        service_params = ServiceParameters(
+            abi=abi,
+            contract_address=contract_address,
+            era_duration_in_blocks=era_duration_in_blocks,
+            era_duration_in_seconds=era_duration_in_seconds,
+            gas_limit=gas_limit,
+            initial_block_number=initial_block_number,
+            max_num_of_failure_reqs=max_number_of_failure_requests,
+            para_id=para_id,
+            ss58_format=ss58_format,
+            substrate=substrate,
+            timeout=timeout,
+            type_registry_preset=type_registry_preset,
+            watchdog_delay=watchdog_delay,
+            ws_urls_relay=ws_url_relay,
+            ws_urls_para=ws_url_para,
+            w3=w3,
+        )
+
+        oracle = Oracle(priv_key=oracle_private_key, service_params=service_params)
 
     except (
         ABIFunctionNotFound,
         FileNotFoundError,
+        InvalidMessage,
+        IsADirectoryError,
         OverflowError,
         ValueError,
     ) as exc:
@@ -114,24 +128,8 @@ def main():
     except KeyboardInterrupt:
         sys.exit()
 
-    service_params = ServiceParameters(
-        abi=abi,
-        contract_address=contract_address,
-        era_duration=era_duration,
-        gas_limit=gas_limit,
-        initial_block_number=initial_block_number,
-        max_num_of_failure_reqs=max_number_of_failure_requests,
-        para_id=para_id,
-        ss58_format=ss58_format,
-        substrate=substrate,
-        timeout=timeout,
-        type_registry_preset=type_registry_preset,
-        ws_urls_relay=ws_url_relay,
-        ws_urls_para=ws_url_para,
-        w3=w3,
-    )
-
-    oracle = Oracle(priv_key=oracle_private_key, service_params=service_params)
+    signal.signal(signal.SIGTERM, partial(stop_signal_handler, substrate=substrate, timer=oracle.watchdog))
+    signal.signal(signal.SIGINT, partial(stop_signal_handler, substrate=substrate, timer=oracle.watchdog))
 
     while True:
         try:
@@ -146,6 +144,7 @@ def main():
         except (
             BadFunctionCallOutput,
             BlockNotFound,
+            BrokenPipeError,
             ConnectionClosedError,
             ConnectionRefusedError,
             ConnectionResetError,

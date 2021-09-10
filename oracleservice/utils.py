@@ -1,4 +1,5 @@
 from os.path import exists
+from substrateinterface import SubstrateInterface
 from web3 import Web3
 from web3.auto import w3
 from web3.exceptions import ABIFunctionNotFound
@@ -6,6 +7,9 @@ from websocket._exceptions import WebSocketAddressException
 
 import json
 import logging
+import socket
+import sys
+import threading as th
 import time
 import urllib
 
@@ -21,13 +25,41 @@ LOG_LEVELS = (
 )
 
 NON_NEGATIVE_PARAMETERS = (
-    'ERA_DURATION',
+    'ERA_DURATION_IN_BLOCKS',
+    'ERA_DURATION_IN_SECONDS',
     'GAS_LIMIT',
     'INITIAL_BLOCK_NUMBER',
     'MAX_NUMBER_OF_FAILURE_REQUESTS',
     'PARA_ID',
     'TIMEOUT',
+    'WATCHDOG_DELAY',
 )
+
+
+def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, timer: th.Timer = None):
+    """Handle signal, close substrate interface websocket connection, if it is open, stop timer thread and terminate the process"""
+    logger.debug(f"Receiving signal: {sig}")
+    if substrate is not None:
+        logger.debug("Closing substrate interface websocket connection")
+        try:
+            substrate.websocket.sock.shutdown(socket.SHUT_RDWR)
+        except (
+            AttributeError,
+            OSError,
+        ) as exc:
+            logger.warning(exc)
+        else:
+            logger.debug(f"Connection to relaychain node {substrate.url} is closed")
+
+    if timer is not None:
+        try:
+            if timer.is_alive():
+                timer.cancel()
+
+        except Exception as exc:
+            logger.warning(exc)
+
+    sys.exit()
 
 
 def create_provider(urls: list, timeout: int = 60, undesirable_urls: set = set()) -> Web3:
@@ -85,14 +117,15 @@ def check_contract_address(w3: Web3, contract_addr: str):
 
 
 def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
+    """Check the provided ABI by checking JSON file and calling the contract methods"""
     contract = w3.eth.contract(address=contract_addr, abi=abi)
     try:
         if not hasattr(contract.functions, 'reportRelay'):
             raise ABIFunctionNotFound("The contract does not contain the 'reportRelay' function")
 
         contract.functions.reportRelay(0, {
-            'stash': '',
-            'controller': '',
+            'stashAccount': '',
+            'controllerAccount': '',
             'stakeStatus': 0,
             'activeBalance': 0,
             'totalBalance': 0,
@@ -101,10 +134,10 @@ def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
             'stashBalance': 0,
         }).call()
 
-        if not hasattr(contract.functions, 'getStakeAccounts'):
-            raise ABIFunctionNotFound("The contract does not contain the 'getStakeAccounts' function")
+        if not hasattr(contract.functions, 'getStashAccounts'):
+            raise ABIFunctionNotFound("The contract does not contain the 'getStashAccounts' function")
 
-        contract.functions.getStakeAccounts(oracle_addr).call()
+        contract.functions.getStashAccounts().call()
 
     except ValueError:
         pass
@@ -138,24 +171,28 @@ def remove_invalid_urls(urls: [str]) -> [str]:
 def perform_sanity_checks(
     abi_path: str,
     contract_address: str,
-    era_duration: int,
+    era_duration_in_blocks: int,
+    era_duration_in_seconds: int,
     gas_limit: int,
     initial_block_number: int,
     max_number_of_failure_requests: int,
     para_id: int,
     private_key: str,
     timeout: int,
+    watchdog_delay: int,
     ws_url_relay: [str],
     ws_url_para: [str],
 ):
     """Check the parameters passed to the Oracle"""
     try:
-        assert era_duration > 0
-        assert initial_block_number >= 0
-        assert timeout >= 0
+        assert era_duration_in_blocks > 0
+        assert era_duration_in_seconds > 0
         assert gas_limit > 0
+        assert initial_block_number >= 0
         assert max_number_of_failure_requests >= 0
         assert para_id >= 0
+        assert timeout >= 0
+        assert watchdog_delay >= 0
 
     except AssertionError:
         raise ValueError(f"The following parameters must be non-negative: {NON_NEGATIVE_PARAMETERS}")
