@@ -25,12 +25,14 @@ LOG_LEVELS = (
 )
 
 NON_NEGATIVE_PARAMETERS = (
-    'ERA_DURATION',
+    'ERA_DURATION_IN_BLOCKS',
+    'ERA_DURATION_IN_SECONDS',
     'GAS_LIMIT',
     'INITIAL_BLOCK_NUMBER',
     'MAX_NUMBER_OF_FAILURE_REQUESTS',
     'PARA_ID',
     'TIMEOUT',
+    'WATCHDOG_DELAY',
 )
 
 
@@ -177,6 +179,7 @@ def perform_sanity_checks(
     para_id: int,
     private_key: str,
     timeout: int,
+    watchdog_delay: int,
     ws_url_relay: [str],
     ws_url_para: [str],
 ):
@@ -184,11 +187,12 @@ def perform_sanity_checks(
     try:
         assert era_duration_in_blocks > 0
         assert era_duration_in_seconds > 0
-        assert initial_block_number >= 0
-        assert timeout >= 0
         assert gas_limit > 0
+        assert initial_block_number >= 0
         assert max_number_of_failure_requests >= 0
         assert para_id >= 0
+        assert timeout >= 0
+        assert watchdog_delay >= 0
 
     except AssertionError:
         raise ValueError(f"The following parameters must be non-negative: {NON_NEGATIVE_PARAMETERS}")

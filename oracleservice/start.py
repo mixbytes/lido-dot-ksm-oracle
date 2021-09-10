@@ -72,6 +72,7 @@ def main():
             para_id=para_id,
             private_key=oracle_private_key,
             timeout=timeout,
+            watchdog_delay=watchdog_delay,
             ws_url_para=ws_url_para,
             ws_url_relay=ws_url_relay,
         )
@@ -111,6 +112,7 @@ def main():
         ABIFunctionNotFound,
         FileNotFoundError,
         InvalidMessage,
+        IsADirectoryError,
         ValueError,
     ) as exc:
         sys.exit(exc)
