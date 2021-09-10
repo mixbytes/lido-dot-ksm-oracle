@@ -156,7 +156,7 @@ class Oracle:
 
     def _handle_watchdog_tick(self):
         """Start the timer for SIGALRM and end the thread"""
-        signal.alarm(self.service_params.era_duration_in_seconds)
+        signal.alarm(self.service_params.era_duration_in_seconds + self.service_params.watchdog_delay)
         sys.exit()
 
     def _close_connection_to_relaychain(self, sig: int = signal.SIGINT, frame=None):
@@ -212,7 +212,8 @@ class Oracle:
         stash_accounts = self._get_stash_accounts()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
         if not stash_accounts:
-            logger.info("No stake accounts found: waiting for the next era")
+            logger.info("No stash accounts found: waiting for the next era")
+            self.previous_era_id = era_id
             return
 
         block_hash = self._find_start_block(era.value['index'])
@@ -250,7 +251,6 @@ class Oracle:
             self.last_era_reported[stash.public_key] = era_id
 
         logger.info("Waiting for the next era")
-        self.previous_era_id = era_id
         self.failure_reqs_count[self.service_params.substrate.url] = 0
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:

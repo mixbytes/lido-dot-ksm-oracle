@@ -15,6 +15,7 @@ class ServiceParameters:
 
     max_num_of_failure_reqs: int = 10
     timeout: int = 60
+    watchdog_delay: int = 5
 
     stash_accounts: list = field(default_factory=list)
 

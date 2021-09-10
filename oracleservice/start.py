@@ -18,12 +18,13 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GAS_LIMIT = 10000000
-DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
-DEFAULT_TIMEOUT = 60
 DEFAULT_ERA_DURATION_IN_BLOCKS = 30
 DEFAULT_ERA_DURATION_IN_SECONDS = 180
+DEFAULT_GAS_LIMIT = 10000000
 DEFAULT_INITIAL_BLOCK_NUMBER = 1
+DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
+DEFAULT_TIMEOUT = 60
+DEFAULT_WATCHDOG_DELAY = 5
 
 
 def main():
@@ -50,6 +51,7 @@ def main():
             DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS,
         ))
         timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
+        watchdog_delay = int(os.getenv('WATCHDOG_DELAY', DEFAULT_WATCHDOG_DELAY))
 
         era_duration_in_blocks = int(os.getenv('ERA_DURATION_IN_BLOCKS', DEFAULT_ERA_DURATION_IN_BLOCKS))
         era_duration_in_seconds = int(os.getenv('ERA_DURATION_IN_SECONDS', DEFAULT_ERA_DURATION_IN_SECONDS))
@@ -97,6 +99,7 @@ def main():
             substrate=substrate,
             timeout=timeout,
             type_registry_preset=type_registry_preset,
+            watchdog_delay=watchdog_delay,
             ws_urls_relay=ws_url_relay,
             ws_urls_para=ws_url_para,
             w3=w3,
