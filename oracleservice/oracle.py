@@ -54,8 +54,6 @@ class Oracle:
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
 
-        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
-
         self._restore_state()
         self._start_era_monitoring()
 
@@ -222,7 +220,6 @@ class Oracle:
             return
         logger.info(f"Active era index: {era_id}, start timestamp: {era.value['start']}")
 
-        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         stash_accounts = self._get_stash_accounts()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
