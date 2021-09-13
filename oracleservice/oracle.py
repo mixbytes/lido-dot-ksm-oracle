@@ -5,6 +5,7 @@ from substrateinterface import Keypair
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import create_provider
 from web3.exceptions import BadFunctionCallOutput
+from web3 import Account
 from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage
 
@@ -22,10 +23,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Oracle:
     """A class that contains all the logic of the oracle's work"""
-    priv_key: str
+    account: Account
     service_params: ServiceParameters
 
-    account = None
     default_mode_started: bool = False
     failure_reqs_count: dict = field(default_factory=dict)
     last_era_reported: dict = field(default_factory=dict)
@@ -54,8 +54,9 @@ class Oracle:
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
 
-        self.account = self.service_params.w3.eth.account.from_key(self.priv_key)
+        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
 
+        self._restore_state()
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
@@ -139,6 +140,17 @@ class Oracle:
                 else:
                     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
 
+    def _restore_state(self):
+        """Restore the state after starting the default mode"""
+        stash_accounts = self._get_stash_accounts()
+        for stash_acc in stash_accounts:
+            (era_id, is_reported) = self.service_params.w3.eth.contract(
+                address=self.service_params.contract_address,
+                abi=self.service_params.abi
+            ).functions.isReportedLastEra(self.account.address, stash_acc).call()
+
+            self.last_era_reported[stash_acc] = era_id if is_reported else era_id - 1
+
     def _get_stash_accounts(self) -> list:
         """Get list of stash accounts and the last era reported using 'getStashAccounts' function"""
         return self.service_params.w3.eth.contract(
@@ -204,10 +216,12 @@ class Oracle:
         self.watchdog.start()
 
         era_id = era.value['index']
-        if era_id == self.previous_era_id:
+        if era_id <= self.previous_era_id:
+            logger.info(f"Skip sporadic new era event {era_id}")
             return
         logger.info(f"Active era index: {era_id}, start timestamp: {era.value['start']}")
 
+        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         stash_accounts = self._get_stash_accounts()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
@@ -221,16 +235,12 @@ class Oracle:
             logger.error("Can't find the required block")
             raise BlockNotFound
 
-        for stash_acc, stash_era_id in stash_accounts:
+        for stash_acc in stash_accounts:
             self.failure_reqs_count[self.service_params.substrate.url] += 1
 
             stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
-            logger.info(f"Current stash is {stash.ss58_address}; era is {stash_era_id}")
-            if era_id < stash_era_id:
-                logger.info(f"Current era less than the specified era for stash '{stash.ss58_address}': skipping current era")
-                continue
 
-            if self.last_era_reported.get(stash.public_key, 0) >= era.value['index']:
+            if self.last_era_reported.get(stash.public_key, 0) >= era_id:
                 logger.info(f"The report has already been sent for stash {stash.ss58_address}")
                 continue
 
@@ -251,6 +261,8 @@ class Oracle:
             self.last_era_reported[stash.public_key] = era_id
 
         logger.info("Waiting for the next era")
+        self.previous_era_id = era_id
+
         self.failure_reqs_count[self.service_params.substrate.url] = 0
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
@@ -297,7 +309,7 @@ class Oracle:
             'activeBalance': staking_ledger_result['active'],
             'totalBalance': staking_ledger_result['total'],
             'unlocking': [{'balance': elem['value'], 'era': elem['era']} for elem in staking_ledger_result['unlocking']],
-            'claimedRewards': [],
+            'claimedRewards': [],  # put aside until storage proof has been implemented // staking_ledger_result['claimedRewards'],
             'stashBalance': stash_free_balance,
         }
 
@@ -316,7 +328,7 @@ class Oracle:
 
         return result
 
-    def _get_stash_free_balance(self, stash: Keypair) -> dict:
+    def _get_stash_free_balance(self, stash: Keypair) -> int:
         """Get stash accounts free balances"""
         account = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash)
 
@@ -369,7 +381,7 @@ class Oracle:
             logger.warning(f"Report for '{stash.ss58_address}' era {era_id} probably will fail with {msg}")
             return False
 
-        tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.priv_key)
+        tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.account.privateKey)
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         logger.info(f"Sending a transaction for stash {stash.ss58_address}")
         tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
@@ -383,5 +395,5 @@ class Oracle:
             self._wait_in_two_blocks(tx_receipt)
             return True
         else:
-            logger.warning(f"Transaction is reverted for stash {stash.ss58_address} with era {era_id}")
+            logger.warning(f"Transaction status for stash '{stash.ss58_address}' era {era_id} is reverted")
             return False

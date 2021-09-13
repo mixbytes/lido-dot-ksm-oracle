@@ -85,7 +85,8 @@ def main():
         substrate = SubstrateInterfaceUtils.create_interface(ws_url_relay, ss58_format, type_registry_preset)
 
         check_contract_address(w3, contract_address)
-        check_abi(w3, contract_address, abi, w3.eth.account.from_key(oracle_private_key).address)
+        oracle = w3.eth.account.from_key(oracle_private_key)
+        check_abi(w3, contract_address, abi, oracle.address)
 
         service_params = ServiceParameters(
             abi=abi,
@@ -106,7 +107,7 @@ def main():
             w3=w3,
         )
 
-        oracle = Oracle(priv_key=oracle_private_key, service_params=service_params)
+        oracle = Oracle(account=oracle, service_params=service_params)
 
     except (
         ABIFunctionNotFound,
