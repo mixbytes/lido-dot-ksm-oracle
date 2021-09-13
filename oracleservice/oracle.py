@@ -56,9 +56,9 @@ class Oracle:
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
 
-        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
+        with metrics_exporter.para_exceptions_count.count_exceptions():
+            self._restore_state()
 
-        self._restore_state()
         self._start_era_monitoring()
 
     def start_recovery_mode(self):
@@ -229,7 +229,6 @@ class Oracle:
         metrics_exporter.active_era_id.set(era.value['index'])
         metrics_exporter.total_stashes_free_balance.set(0)
 
-        self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         with metrics_exporter.para_exceptions_count.count_exceptions():
             stash_accounts = self._get_stash_accounts()
