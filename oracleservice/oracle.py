@@ -216,13 +216,12 @@ class Oracle:
         self._create_watchdog()
         self.watchdog.start()
 
-        active_era_id = era.value['index']
-        if active_era_id <= self.previous_era_id:
-            logger.info(f"Skip sporadic new era event {active_era_id}")
+        era_id = era.value['index']
+        if era_id <= self.previous_era_id:
+            logger.info(f"Skip sporadic new era event {era_id}")
             return
-        logger.info(f"Active era index: {active_era_id}, start timestamp: {era.value['start']}")
+        logger.info(f"Active era index: {era_id}, start timestamp: {era.value['start']}")
 
-        era_id = active_era_id - 4
         self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         stash_accounts = self._get_stash_accounts()
