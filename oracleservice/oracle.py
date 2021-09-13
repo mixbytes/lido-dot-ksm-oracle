@@ -149,7 +149,8 @@ class Oracle:
                 abi=self.service_params.abi
             ).functions.isReportedLastEra(self.account.address, stash_acc).call()
 
-            self.last_era_reported[stash_acc] = era_id if is_reported else era_id - 1
+            stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
+            self.last_era_reported[stash.public_key] = era_id if is_reported else era_id - 1
 
     def _get_stash_accounts(self) -> list:
         """Get list of stash accounts and the last era reported using 'getStashAccounts' function"""
@@ -215,12 +216,13 @@ class Oracle:
         self._create_watchdog()
         self.watchdog.start()
 
-        era_id = era.value['index']
-        if era_id <= self.previous_era_id:
-            logger.info(f"Skip sporadic new era event {era_id}")
+        active_era_id = era.value['index']
+        if active_era_id <= self.previous_era_id:
+            logger.info(f"Skip sporadic new era event {active_era_id}")
             return
-        logger.info(f"Active era index: {era_id}, start timestamp: {era.value['start']}")
+        logger.info(f"Active era index: {active_era_id}, start timestamp: {era.value['start']}")
 
+        era_id = active_era_id - 4
         self.nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         stash_accounts = self._get_stash_accounts()
