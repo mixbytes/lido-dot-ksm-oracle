@@ -6,3 +6,7 @@ tests/__pycache__
 oracleservice/__pycache__
 
 *.swp
+
+prompt.py
+*.cmd
+*.json
