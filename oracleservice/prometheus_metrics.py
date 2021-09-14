@@ -17,8 +17,8 @@ class MetricsExporter:
 
     total_stashes_free_balance = Gauge('total_stashes_free_balance', 'total free balance of all stash accounts')
 
-    tx_revert = Histogram('tx_revert', 'the number of failed transactions per unit of time')
-    tx_success = Histogram('tx_success', 'the number of successful transactcions per unit of time')
+    tx_revert = Histogram('tx_revert', 'reverted transactions')
+    tx_success = Histogram('tx_success', 'successful transactions')
 
     para_exceptions_count = Counter('para_exceptions_count', 'parachain exceptions count')
     relay_exceptions_count = Counter('relay_exceptions_count', 'relay chain exceptions count')
