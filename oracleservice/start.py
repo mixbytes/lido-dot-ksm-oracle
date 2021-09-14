@@ -121,6 +121,7 @@ def main():
         FileNotFoundError,
         InvalidMessage,
         IsADirectoryError,
+        OSError,
         OverflowError,
         ValueError,
     ) as exc:
