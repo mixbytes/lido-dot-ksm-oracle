@@ -15,6 +15,7 @@ import signal
 import socket
 import threading as th
 import time
+import os
 import sys
 
 
@@ -36,7 +37,8 @@ class Oracle:
 
     def __post_init__(self):
         self._create_watchdog()
-        signal.signal(signal.SIGALRM, self._close_connection_to_relaychain)
+        if os.name != 'nt':
+            signal.signal(signal.SIGALRM, self._close_connection_to_relaychain)
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -174,7 +176,8 @@ class Oracle:
 
     def _handle_watchdog_tick(self):
         """Start the timer for SIGALRM and end the thread"""
-        signal.alarm(self.service_params.era_duration_in_seconds + self.service_params.watchdog_delay)
+        if os.name != 'nt':
+            signal.alarm(self.service_params.era_duration_in_seconds + self.service_params.watchdog_delay)
         sys.exit()
 
     def _close_connection_to_relaychain(self, sig: int = signal.SIGINT, frame=None):
@@ -204,7 +207,7 @@ class Oracle:
             logger.error("The block number in transaction receipt was not found")
             return
 
-        logger.info("Waiting in two blocks")
+        logger.debug("Waiting in two blocks")
         while True:
             current_block = self.service_params.w3.eth.get_block('latest')
             if current_block is not None and 'number' in current_block:
