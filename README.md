@@ -1,5 +1,18 @@
 # lido-dot-ksm-oracle
-oracle service for LiDo liquid staking 
+Oracle service for LiDo liquid staking.
+
+## Run
+The oracle service receives its configuration from environment variables. You need to provide WS URLs of relay chain and parachain nodes, oracle private key, OracleMaster contract address and parachain ID.
+
+```shell
+export ORACLE_PRIVATE_KEY=$ORACLE_PRIVATE_KEY_0X_PREFIXED
+export WS_URL_RELAY=$RELAY_CHAIN_NODE_ADDRESS
+export WS_URL_PARA=$PARACHAIN_NODE_ADDRESS
+export CONTRACT_ADDRESS=0xc01Ee7f10EA4aF4673cFff62710E1D7792aBa8f3
+export PARA_ID=1000
+./oracleservice/start.py
+```
+
 
 ## Full list of configuration options
 
@@ -17,7 +30,7 @@ oracle service for LiDo liquid staking
 * `WATCHDOG_DELAY` - Additional time before watchdog is triggered to break connection if there is no era change event more than `ERA_DURATION_IN_SECONDS` seconds. The default value is 5 seconds.
 * `SS58_FORMAT` - The default value is 2. **Required**.
 * `TYPE_REGISTRY_PRESET` - The default value is 'kusama'. **Required**.
-* `PARA_ID` - Parachain ID.
+* `PARA_ID` - Parachain ID. **Required**.
 * `PROMETHEUS_METRICS_PORT` - Prometheus client port. The default port is 8000.
 * `LOG_LEVEL_STDOUT` - Logging level of the logging module: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. The default level is `INFO`.
 
