@@ -1,12 +1,17 @@
 # lido-dot-ksm-oracle
-Oracle service for LiDo liquid staking.
+Oracle service for LiDo liquid staking. Collects staking parameters from relay chain and reports to the parachain [liquid staking module](https://github.com/mixbytes/lido-dot-ksm).
+
+## How it works
+* Upon the start daemon determines the reportable era and retrieves the list of stash accounts to report for.
+* If no stash accounts were found, waits for the beginning of the next era. Otherwise, daemon starts collections staking parameters for each stash account separately, signs and sends transaction to the oracle contract.
+* After a report has been sent for all stash accounts, it moves on to waiting for the next era.
 
 ## Requirements
 * Running relay chain node, from which the staking parameters are read.
 * Running parachain node with [contracts](https://github.com/mixbytes/lido-dot-ksm) deployed.
 * ABI for the OracleMaster contract (see above).
 * Python 3.7+
-* The application functions as a linux daemon(unit) process under the system-v subsystem.
+* The application functions as a linux daemon (unit) process under the System V subsystem.
 
 
 ## Setup
