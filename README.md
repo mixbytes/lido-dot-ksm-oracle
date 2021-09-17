@@ -1,6 +1,21 @@
 # lido-dot-ksm-oracle
 Oracle service for LiDo liquid staking.
 
+## Requirements
+* Running relay chain node, from which the staking parameters are read.
+* Running parachain node with [contracts](https://github.com/mixbytes/lido-dot-ksm) deployed.
+* ABI for the OracleMaster contract (see above).
+* Python 3.7+
+* The application functions as a linux daemon(unit) process under the system-v subsystem.
+
+
+## Setup
+```shell
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+
 ## Run
 The oracle service receives its configuration from environment variables. You need to provide WS URLs of relay chain and parachain nodes, oracle private key, OracleMaster contract address and parachain ID.
 
@@ -12,6 +27,8 @@ export CONTRACT_ADDRESS=0xc01Ee7f10EA4aF4673cFff62710E1D7792aBa8f3
 export PARA_ID=1000
 ./oracleservice/start.py
 ```
+
+To stop the service, send a SIGINT or SIGTERM signal to the process.
 
 
 ## Full list of configuration options
