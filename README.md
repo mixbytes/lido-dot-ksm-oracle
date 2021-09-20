@@ -11,7 +11,7 @@ Oracle service for LiDo liquid staking. Collects staking parameters from relay c
 * Running parachain node with [contracts](https://github.com/mixbytes/lido-dot-ksm) deployed.
 * ABI for the OracleMaster contract (see above).
 * Python 3.7+
-* The application functions as a linux daemon (unit) process under the System V subsystem.
+* The application functions as a linux service under systemd or as a docker container.
 
 
 ## Setup
@@ -23,7 +23,13 @@ pip install -r requirements.txt
 
 ## Run
 The oracle service receives its configuration from environment variables. You need to provide WS URLs of relay chain and parachain nodes, oracle private key, OracleMaster contract address and parachain ID.
+You also need to provide the ABI of the contract (by default the service tries to get it from the `oracleservice/abi.json` file, see below). You can get it as follows:
 
+* Clone `lido-dot-ksm` repository.
+* Run the `brownie compile` command.
+* Copy the contents of the `build/contracts/OracleMaster.json` with the 'abi' key to `oracleservice/abi.json` or change the `ABI_PATH` environment variable (see below).
+
+To start the service, you need to do the following:
 ```shell
 export ORACLE_PRIVATE_KEY=$ORACLE_PRIVATE_KEY_0X_PREFIXED
 export WS_URL_RELAY=$RELAY_CHAIN_NODE_ADDRESS
