@@ -156,7 +156,7 @@ def remove_invalid_urls(urls: [str]) -> [str]:
     for url in urls:
         parsed_url = urllib.parse.urlparse(url)
         try:
-            assert parsed_url.scheme == "ws"
+            assert parsed_url.scheme in ("ws", "wss")
             assert parsed_url.params == ""
             assert parsed_url.fragment == ""
             assert parsed_url.hostname is not None
