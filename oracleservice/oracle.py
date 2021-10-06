@@ -215,6 +215,17 @@ class Oracle:
                     break
             time.sleep(1)
 
+    def _wait_until_finalizing(self, block_number: int):
+        """Wait until the block is finalized"""
+        logger.debug(f"Waiting until the block {block_number} is finalized")
+        finalised_head = self.service_params.substrate.get_chain_finalised_head()
+        finalised_head_number = self.service_params.substrate.get_block_header(finalised_head)['header']['number']
+
+        while finalised_head_number < block_number:
+            time.sleep(self.service_params.era_duration_in_seconds / self.service_params.era_duration_in_blocks)
+            finalised_head = self.service_params.substrate.get_chain_finalised_head()
+            finalised_head_number = self.service_params.substrate.get_block_header(finalised_head)['header']['number']
+
     def _handle_era_change(self, era, update_nr: int, subscription_id: str):
         """
         Read the staking parameters for each stash account separately from the block where
@@ -246,6 +257,7 @@ class Oracle:
             if block_hash is None:
                 logger.error("Can't find the required block")
                 raise BlockNotFound
+            self._wait_until_finalizing(block_number)
         logger.info(f"Block hash: {block_hash}")
         metrics_exporter.previous_era_change_block_number.set(block_number)
 
