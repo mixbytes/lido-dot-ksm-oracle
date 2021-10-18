@@ -277,11 +277,13 @@ class Oracle:
             staking_parameters = self._read_staking_parameters(stash, block_hash)
             self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
-            logger.info("The parameters are read. Preparing the transaction body.")
-            logger.debug(';'.join([
+            logger.info('; '.join([
+                "The parameters are read. Preparing the transaction body",
                 f"stash: {stash.ss58_address}",
                 f"era: {era_id}",
                 f"staking parameters: {staking_parameters}",
+            ]))
+            logger.debug('; '.join([
                 f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
                 f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
             ]))
