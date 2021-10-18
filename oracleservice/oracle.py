@@ -317,7 +317,7 @@ class Oracle:
             block_hash = self.service_params.substrate.get_chain_head()
 
         with metrics_exporter.relay_exceptions_count.count_exceptions():
-            stash_free_balance = self._get_stash_free_balance(stash)
+            stash_free_balance = self._get_stash_free_balance(stash, block_hash)
             stake_status = self._get_stake_status(stash, block_hash)
             staking_ledger_result = self._get_ledger_data(block_hash, stash)
 
@@ -361,9 +361,9 @@ class Oracle:
 
         return result
 
-    def _get_stash_free_balance(self, stash: Keypair) -> int:
+    def _get_stash_free_balance(self, stash: Keypair, block_hash: str) -> int:
         """Get stash accounts free balances"""
-        account_info = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash)
+        account_info = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash, block_hash)
         metrics_exporter.total_stashes_free_balance.inc(account_info.value['data']['free'])
 
         return account_info.value['data']['free']

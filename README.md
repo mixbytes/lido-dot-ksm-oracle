@@ -23,11 +23,10 @@ pip install -r requirements.txt
 
 ## Run
 The oracle service receives its configuration from environment variables. You need to provide WS URLs of relay chain and parachain nodes, oracle private key, OracleMaster contract address and parachain ID.
-You also need to provide the ABI of the contract (by default the service tries to get it from the `oracleservice/abi.json` file, see below). You can get it as follows:
-
+By default, the `assets` directory contains oracle ABI and the service tries to get it from the `assets/oracle.json` file, but you can change it as follows:
 * Clone `lido-dot-ksm` repository.
 * Run the `brownie compile` command.
-* Copy the contents of the `build/contracts/OracleMaster.json` with the 'abi' key to `oracleservice/abi.json` or change the `ABI_PATH` environment variable (see below).
+* Copy the contents of the `build/contracts/OracleMaster.json` with the 'abi' key to `assets/oracle.json` or change the `ABI_PATH` environment variable (see below).
 
 To start the service, you need to do the following:
 ```shell
@@ -48,7 +47,7 @@ To stop the service, send a SIGINT or SIGTERM signal to the process.
 * `WS_URL_PARA` - WS URL of parachain node. **Required**.
 * `CONTRACT_ADDRESS` - OracleMaster contract address. **Required**. Example: `0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84`.
 * `ORACLE_PRIVATE_KEY` - Oracle private key, 0x prefixed. **Required**.
-* `ABI_PATH` - Path to ABI file. The default value is `oracleservice/abi.json`.
+* `ABI_PATH` - Path to ABI file. The default value is `assets/oracle.json`.
 * `GAS_LIMIT` - The predefined gas limit for composed transaction. The default value is 10000000.
 * `MAX_NUMBER_OF_FAILURE_REQUESTS` - If the number of failure requests exceeds this value, the node (relay chain or parachain) is blacklisted for TIMEOUT seconds during recovery mode. The default value is 10.
 * `TIMEOUT` - The time the failure node stays in the black list in recovery mode. The default value is 60 seconds.

@@ -50,7 +50,7 @@ def main():
         if contract_address is None:
             sys.exit("No contract address provided")
 
-        abi_path = os.getenv('ABI_PATH', 'oracleservice/abi.json')
+        abi_path = os.getenv('ABI_PATH', 'assets/oracle.json')
 
         gas_limit = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
         max_number_of_failure_requests = int(os.getenv(
