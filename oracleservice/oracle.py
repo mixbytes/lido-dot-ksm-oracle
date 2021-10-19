@@ -277,11 +277,13 @@ class Oracle:
             staking_parameters = self._read_staking_parameters(stash, block_hash)
             self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
-            logger.info("The parameters are read. Preparing the transaction body.")
-            logger.debug(';'.join([
+            logger.info('; '.join([
+                "The parameters are read. Preparing the transaction body",
                 f"stash: {stash.ss58_address}",
                 f"era: {era_id}",
                 f"staking parameters: {staking_parameters}",
+            ]))
+            logger.debug('; '.join([
                 f"Relay chain failure requests counter: {self.failure_reqs_count[self.service_params.substrate.url]}",
                 f"Parachain failure requests counter: {self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri]}",
             ]))
@@ -317,7 +319,7 @@ class Oracle:
             block_hash = self.service_params.substrate.get_chain_head()
 
         with metrics_exporter.relay_exceptions_count.count_exceptions():
-            stash_free_balance = self._get_stash_free_balance(stash)
+            stash_free_balance = self._get_stash_free_balance(stash, block_hash)
             stake_status = self._get_stake_status(stash, block_hash)
             staking_ledger_result = self._get_ledger_data(block_hash, stash)
 
@@ -361,9 +363,9 @@ class Oracle:
 
         return result
 
-    def _get_stash_free_balance(self, stash: Keypair) -> int:
+    def _get_stash_free_balance(self, stash: Keypair, block_hash: str) -> int:
         """Get stash accounts free balances"""
-        account_info = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash)
+        account_info = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash, block_hash)
         metrics_exporter.total_stashes_free_balance.inc(account_info.value['data']['free'])
 
         return account_info.value['data']['free']
