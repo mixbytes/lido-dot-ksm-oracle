@@ -2,6 +2,7 @@
 from functools import partial
 from log import init_log
 from oracle import Oracle
+from pathlib import Path
 from prometheus_client import start_http_server
 from service_parameters import ServiceParameters
 from substrateinterface.exceptions import BlockNotFound
@@ -20,6 +21,7 @@ import sys
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_ABI_PATH = Path(__file__).parent.parent.as_posix() + '/assets/oracle.json'
 DEFAULT_ERA_DURATION_IN_BLOCKS = 30
 DEFAULT_ERA_DURATION_IN_SECONDS = 180
 DEFAULT_GAS_LIMIT = 10000000
@@ -50,7 +52,7 @@ def main():
         if contract_address is None:
             sys.exit("No contract address provided")
 
-        abi_path = os.getenv('ABI_PATH', 'assets/oracle.json')
+        abi_path = os.getenv('ABI_PATH', DEFAULT_ABI_PATH)
 
         gas_limit = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
         max_number_of_failure_requests = int(os.getenv(
