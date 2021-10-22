@@ -157,6 +157,7 @@ def main():
             InvalidMessage,
             InvalidStatusCode,
             KeyError,
+            OSError,
             SubstrateRequestException,
             TimeExhausted,
             TimeoutError,

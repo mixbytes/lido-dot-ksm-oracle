@@ -1,14 +1,15 @@
 from dataclasses import dataclass, field
 from prometheus_metrics import metrics_exporter
 from service_parameters import ServiceParameters
+from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface import Keypair
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import create_provider
 from web3.exceptions import BadFunctionCallOutput
 from web3 import Account
-from websocket._exceptions import WebSocketConnectionClosedException
-from websockets.exceptions import ConnectionClosedError, InvalidMessage
+from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
+from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
 
 import logging
 import signal
@@ -96,12 +97,16 @@ class Oracle:
                 break
 
             except (
-                BadFunctionCallOutput,
                 BrokenPipeError,
                 ConnectionClosedError,
                 ConnectionRefusedError,
                 ConnectionResetError,
+                gaierror,
                 InvalidMessage,
+                InvalidStatusCode,
+                OSError,
+                TimeoutError,
+                WebSocketAddressException,
                 WebSocketConnectionClosedException,
             ) as exc:
                 logger.warning(f"Error: {exc}")
@@ -132,7 +137,12 @@ class Oracle:
                 ConnectionClosedError,
                 ConnectionRefusedError,
                 ConnectionResetError,
+                gaierror,
                 InvalidMessage,
+                InvalidStatusCode,
+                OSError,
+                TimeoutError,
+                WebSocketAddressException,
                 WebSocketConnectionClosedException,
             ) as exc:
                 logger.warning(f"Error: {exc}")
