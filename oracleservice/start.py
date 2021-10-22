@@ -5,12 +5,13 @@ from oracle import Oracle
 from pathlib import Path
 from prometheus_client import start_http_server
 from service_parameters import ServiceParameters
+from socket import gaierror 
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import create_provider, get_abi, remove_invalid_urls, stop_signal_handler
 from utils import check_abi, check_contract_address, check_log_level, perform_sanity_checks
 from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
-from websocket._exceptions import WebSocketConnectionClosedException
+from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
 
 import logging
@@ -152,13 +153,16 @@ def main():
             ConnectionClosedError,
             ConnectionRefusedError,
             ConnectionResetError,
+            gaierror,
             InvalidMessage,
             InvalidStatusCode,
             KeyError,
             SubstrateRequestException,
             TimeExhausted,
+            TimeoutError,
             ValidationError,
             ValueError,
+            WebSocketAddressException,
             WebSocketConnectionClosedException,
         ) as exc:
             logger.warning(f"Error: {exc}")
