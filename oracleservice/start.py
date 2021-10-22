@@ -5,7 +5,7 @@ from oracle import Oracle
 from pathlib import Path
 from prometheus_client import start_http_server
 from service_parameters import ServiceParameters
-from socket import gaierror 
+from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrate_interface_utils import SubstrateInterfaceUtils
 from utils import create_provider, get_abi, remove_invalid_urls, stop_signal_handler
