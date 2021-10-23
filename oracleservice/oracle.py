@@ -11,6 +11,7 @@ from web3 import Account
 from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
 
+import asyncio
 import logging
 import signal
 import socket
@@ -97,6 +98,7 @@ class Oracle:
                 break
 
             except (
+                asyncio.exceptions.TimeoutError,
                 BrokenPipeError,
                 ConnectionClosedError,
                 ConnectionRefusedError,
@@ -132,6 +134,7 @@ class Oracle:
                 break
 
             except (
+                asyncio.exceptions.TimeoutError,
                 BadFunctionCallOutput,
                 BrokenPipeError,
                 ConnectionClosedError,
