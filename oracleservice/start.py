@@ -14,6 +14,7 @@ from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExha
 from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
 
+import asyncio
 import logging
 import os
 import signal
@@ -147,6 +148,7 @@ def main():
             sys.exit(f"Error: {exc}")
 
         except (
+            asyncio.exceptions.TimeoutError,
             BadFunctionCallOutput,
             BlockNotFound,
             BrokenPipeError,
