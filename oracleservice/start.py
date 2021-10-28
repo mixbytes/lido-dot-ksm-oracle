@@ -141,34 +141,34 @@ def main():
         try:
             oracle.start_default_mode()
 
-        except (
-            ABIFunctionNotFound,
-            AssertionError,
-        ) as exc:
-            sys.exit(f"Error: {exc}")
-
-        except (
-            asyncio.exceptions.TimeoutError,
-            BadFunctionCallOutput,
-            BlockNotFound,
-            BrokenPipeError,
-            ConnectionClosedError,
-            ConnectionRefusedError,
-            ConnectionResetError,
-            gaierror,
-            InvalidMessage,
-            InvalidStatusCode,
-            KeyError,
-            OSError,
-            SubstrateRequestException,
-            TimeExhausted,
-            TimeoutError,
-            ValidationError,
-            ValueError,
-            WebSocketAddressException,
-            WebSocketConnectionClosedException,
-        ) as exc:
-            logger.warning(f"Error: {exc}")
+        except Exception as exc:
+            exc_type = type(exc)
+            if exc_type in [
+                ABIFunctionNotFound,
+                AssertionError,
+                asyncio.exceptions.TimeoutError,
+                BadFunctionCallOutput,
+                BlockNotFound,
+                BrokenPipeError,
+                ConnectionClosedError,
+                ConnectionRefusedError,
+                ConnectionResetError,
+                gaierror,
+                InvalidMessage,
+                InvalidStatusCode,
+                KeyError,
+                OSError,
+                SubstrateRequestException,
+                TimeExhausted,
+                TimeoutError,
+                ValidationError,
+                ValueError,
+                WebSocketAddressException,
+                WebSocketConnectionClosedException,
+            ]:
+                logger.warning(f"Error: {exc}")
+            else:
+                logger.error(f"Error: {exc}")
             oracle.start_recovery_mode()
 
 

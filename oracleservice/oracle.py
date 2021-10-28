@@ -97,21 +97,25 @@ class Oracle:
                 metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
                 break
 
-            except (
-                asyncio.exceptions.TimeoutError,
-                BrokenPipeError,
-                ConnectionClosedError,
-                ConnectionRefusedError,
-                ConnectionResetError,
-                gaierror,
-                InvalidMessage,
-                InvalidStatusCode,
-                OSError,
-                TimeoutError,
-                WebSocketAddressException,
-                WebSocketConnectionClosedException,
-            ) as exc:
-                logger.warning(f"Error: {exc}")
+            except Exception as exc:
+                exc_type = type(exc)
+                if exc_type in [
+                    asyncio.exceptions.TimeoutError,
+                    BrokenPipeError,
+                    ConnectionClosedError,
+                    ConnectionRefusedError,
+                    ConnectionResetError,
+                    gaierror,
+                    InvalidMessage,
+                    InvalidStatusCode,
+                    OSError,
+                    TimeoutError,
+                    WebSocketAddressException,
+                    WebSocketConnectionClosedException
+                ]:
+                    logger.warning(f"Error: {exc}")
+                else:
+                    logger.error(f"Error: {exc}")
                 if self.service_params.substrate.url in self.failure_reqs_count:
                     self.failure_reqs_count[self.service_params.substrate.url] += 1
                 else:
@@ -133,22 +137,27 @@ class Oracle:
                     )
                 break
 
-            except (
-                asyncio.exceptions.TimeoutError,
-                BadFunctionCallOutput,
-                BrokenPipeError,
-                ConnectionClosedError,
-                ConnectionRefusedError,
-                ConnectionResetError,
-                gaierror,
-                InvalidMessage,
-                InvalidStatusCode,
-                OSError,
-                TimeoutError,
-                WebSocketAddressException,
-                WebSocketConnectionClosedException,
-            ) as exc:
-                logger.warning(f"Error: {exc}")
+            except Exception as exc:
+                exc_type = type(exc)
+                if exc_type in [
+                    asyncio.exceptions.TimeoutError,
+                    BadFunctionCallOutput,
+                    BrokenPipeError,
+                    ConnectionClosedError,
+                    ConnectionRefusedError,
+                    ConnectionResetError,
+                    gaierror,
+                    InvalidMessage,
+                    InvalidStatusCode,
+                    OSError,
+                    TimeoutError,
+                    WebSocketAddressException,
+                    WebSocketConnectionClosedException,
+                ]:
+                    logger.warning(f"Error: {exc}")
+                else:
+                    logger.error(f"Error: {exc}")
+
                 if self.service_params.w3.provider.endpoint_uri in self.failure_reqs_count:
                     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
                 else:
