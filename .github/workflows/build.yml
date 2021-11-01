@@ -40,7 +40,7 @@ jobs:
           images: mixbytes/lido-dot-ksm-oracle
           tags: |
             type=ref,event=pr
-            type=sha,prefix={{branch}}-,format=short,enable=${{ github.event_name != 'pull_request' }}
+            type=sha,prefix={{branch}}-,format=short,enable=${{ github.event_name == 'push' && !contains(github.ref, '/tags/') }}
             type=semver,pattern={{raw}}
 
       -
