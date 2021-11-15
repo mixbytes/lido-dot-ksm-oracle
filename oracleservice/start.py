@@ -45,10 +45,10 @@ def main():
         start_http_server(prometheus_metrics_port)
 
         ws_urls_relay = os.getenv('WS_URL_RELAY', 'ws://localhost:9951/').split(',')
-        assert not is_invalid_urls(ws_urls_relay), "Invalid urls were found in 'WS_URLS_RELAY' parameter"
+        assert not is_invalid_urls(ws_urls_relay), "Invalid urls were found in 'WS_URL_RELAY' parameter"
 
         ws_urls_para = os.getenv('WS_URL_PARA', 'ws://localhost:10055/').split(',')
-        assert not is_invalid_urls(ws_urls_para), "Invalid urls were found in 'WS_URLS_PARA' parameter"
+        assert not is_invalid_urls(ws_urls_para), "Invalid urls were found in 'WS_URL_PARA' parameter"
 
         ss58_format = int(os.getenv('SS58_FORMAT', 2))
         type_registry_preset = os.getenv('TYPE_REGISTRY_PRESET', 'kusama')
