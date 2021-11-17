@@ -257,14 +257,15 @@ class Oracle:
         Read the staking parameters for each stash account separately from the block where
         the era value is changed, generate the transaction body, sign and send to the parachain.
         """
-        self.watchdog.cancel()
-        self._create_watchdog()
-        self.watchdog.start()
-
         era_id = era.value['index']
         if era_id <= self.previous_era_id:
             logger.info(f"Skip sporadic new era event {era_id}")
             return
+
+        self.watchdog.cancel()
+        self._create_watchdog()
+        self.watchdog.start()
+
         logger.info(f"Active era index: {era_id}, start timestamp: {era.value['start']}")
         metrics_exporter.active_era_id.set(era.value['index'])
         metrics_exporter.total_stashes_free_balance.set(0)
