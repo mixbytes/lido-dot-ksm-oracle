@@ -11,12 +11,15 @@ COPY requirements.txt ./
 RUN pip install --user --trusted-host pypi.python.org -r requirements.txt
 COPY . /app
 
-
 FROM python:3.8-slim as app
 
 COPY --from=builder /root/.local /root/.local
 
 ENV PATH=/root/.local/bin:$PATH
+
+ARG PROMETHEUS_METRICS_PORT=8001
+ENV PROMETHEUS_METRICS_PORT=$PROMETHEUS_METRICS_PORT
+EXPOSE ${PROMETHEUS_METRICS_PORT}
 
 WORKDIR /oracleservice
 COPY assets ./assets

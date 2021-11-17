@@ -40,15 +40,23 @@ export CONTRACT_ADDRESS=0xc01Ee7f10EA4aF4673cFff62710E1D7792aBa8f3
 To stop the service, send a SIGINT or SIGTERM signal to the process.
 
 
-## Run using docker-compose
+## Run as docker container
 * Choose one of the configs: `.env.moonbase`, `.env.devnet` or `.env.development`.
 * Edit the `ORACLE_PRIVATE_KEY` variable.
 * If you chose `.env.development`, edit the `CONTRACT_ADDRESS` variable. 
 * Check the other variables in config for relevance.
 
-To start the service using docker-compose:
+To build the container:
 ```shell
-sudo docker-compose --env-file ${CONFIG_PATH} up -d
+sudo docker build -t lido-oracle .
+```
+
+To start the service:
+```shell
+export ENVIRONMENT=moonbase
+export ORACLE_NUMBER=1
+source .env.$ENVIRONMENT
+sudo docker run --env-file .env.$ENVIRONMENT --name oracle_${ORACLE_NUMBER} -p $PROMETHEUS_METRICS_PORT:8001 -d lido-oracle 
 ```
 
 
