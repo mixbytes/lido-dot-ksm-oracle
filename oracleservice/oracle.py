@@ -63,7 +63,19 @@ class Oracle:
         with metrics_exporter.para_exceptions_count.count_exceptions():
             self._restore_state()
 
-        self._start_era_monitoring()
+        while True:
+            logger.debug(f"Getting active era. Previous era id: {self.previous_era_id}")
+            active_era = self.service_params.substrate.query(
+                    module='Staking',
+                    storage_function='ActiveEra',
+                )
+
+            active_era_id = active_era.value['index']
+            if active_era_id > self.previous_era_id:
+                self._handle_era_change(active_era_id, active_era.value['start'])
+
+            # sleep for 5 minutes before next request
+            time.sleep(300)
 
     def start_recovery_mode(self):
         """Start of the Oracle recovery mode."""
@@ -188,14 +200,6 @@ class Oracle:
                 abi=self.service_params.abi
                ).functions.getStashAccounts().call()
 
-    def _start_era_monitoring(self):
-        """Start monitoring an era change event"""
-        self.service_params.substrate.query(
-            module='Staking',
-            storage_function='ActiveEra',
-            subscription_handler=self._handle_era_change,
-        )
-
     def _handle_watchdog_tick(self):
         """Start the timer for SIGALRM and end the thread"""
         if os.name != 'nt':
@@ -252,22 +256,17 @@ class Oracle:
         if block_current != block_hash:
             raise BlockNotFound
 
-    def _handle_era_change(self, era, update_nr: int, subscription_id: str):
+    def _handle_era_change(self, era_id: int, era_start_timestamp: int):
         """
         Read the staking parameters for each stash account separately from the block where
         the era value is changed, generate the transaction body, sign and send to the parachain.
         """
-        era_id = era.value['index']
-        if era_id <= self.previous_era_id:
-            logger.info(f"Skip sporadic new era event {era_id}")
-            return
-
         self.watchdog.cancel()
         self._create_watchdog()
         self.watchdog.start()
 
-        logger.info(f"Active era index: {era_id}, start timestamp: {era.value['start']}")
-        metrics_exporter.active_era_id.set(era.value['index'])
+        logger.info(f"Active era index: {era_id}, start timestamp: {era_start_timestamp}")
+        metrics_exporter.active_era_id.set(era_id)
         metrics_exporter.total_stashes_free_balance.set(0)
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
@@ -280,12 +279,11 @@ class Oracle:
             return
 
         with metrics_exporter.relay_exceptions_count.count_exceptions():
-            block_hash, block_number = self._find_start_block(era.value['index'])
+            block_hash, block_number = self._find_start_block(era_id)
             if block_hash is None:
                 logger.error("Can't find the required block")
                 raise BlockNotFound
             self._wait_until_finalizing(block_hash, block_number)
-        logger.info(f"Block hash: {block_hash}")
         metrics_exporter.previous_era_change_block_number.set(block_number)
 
         for stash_acc in stash_accounts:
@@ -317,7 +315,7 @@ class Oracle:
             self.last_era_reported[stash.public_key] = era_id
 
         logger.info("Waiting for the next era")
-        metrics_exporter.last_era_reported.set(era.value['index'] - 1)
+        metrics_exporter.last_era_reported.set(era_id - 1)
         self.previous_era_id = era_id
 
         self.failure_reqs_count[self.service_params.substrate.url] = 0
