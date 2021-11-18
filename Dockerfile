@@ -17,6 +17,9 @@ COPY --from=builder /root/.local /root/.local
 
 ENV PATH=/root/.local/bin:$PATH
 
+ARG ENVIRONMENT=moonbase
+ENV ENVIRONMENT=$ENVIRONMENT
+
 ARG PROMETHEUS_METRICS_PORT=8001
 ENV PROMETHEUS_METRICS_PORT=$PROMETHEUS_METRICS_PORT
 EXPOSE ${PROMETHEUS_METRICS_PORT}
@@ -24,5 +27,6 @@ EXPOSE ${PROMETHEUS_METRICS_PORT}
 WORKDIR /oracleservice
 COPY assets ./assets
 COPY oracleservice ./
+COPY .env.$ENVIRONMENT ./
 
-ENTRYPOINT ["python3", "-u", "start.py"]
+CMD ["bash", "-c", "set -a && . ./.env.$ENVIRONMENT && python3 start.py"]

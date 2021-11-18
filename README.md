@@ -53,10 +53,11 @@ sudo docker build -t lido-oracle .
 
 To start the service:
 ```shell
+export ORACLE_PRIVATE_KEY=0x...
 export ENVIRONMENT=moonbase
 export ORACLE_NUMBER=1
 source .env.$ENVIRONMENT
-sudo docker run --env-file .env.$ENVIRONMENT --name oracle_${ORACLE_NUMBER} -p $PROMETHEUS_METRICS_PORT:8001 -d lido-oracle 
+sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORACLE_NUMBER} -p $PROMETHEUS_METRICS_PORT:8001 -d lido-oracle 
 ```
 
 
