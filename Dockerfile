@@ -11,24 +11,22 @@ COPY requirements.txt ./
 RUN pip install --user --trusted-host pypi.python.org -r requirements.txt
 COPY . /app
 
-
 FROM python:3.8-slim as app
 
 COPY --from=builder /root/.local /root/.local
 
-# Set metadata
-ARG PARA_ID
-ARG INITIAL_BLOCK_NUMBER
-ARG ERA_DURATION
-
-ENV PARA_ID=${PARA_ID:-999}
-ENV ABI_PATH=./assets/oracle.json
-ENV INITIAL_BLOCK_NUMBER=${INITIAL_BLOCK_NUMBER:-1}
-ENV ERA_DURATION=${ERA_DURATION:-30}
 ENV PATH=/root/.local/bin:$PATH
+
+ARG ENVIRONMENT=moonbase
+ENV ENVIRONMENT=$ENVIRONMENT
+
+ARG PROMETHEUS_METRICS_PORT=8001
+ENV PROMETHEUS_METRICS_PORT=$PROMETHEUS_METRICS_PORT
+EXPOSE ${PROMETHEUS_METRICS_PORT}
 
 WORKDIR /oracleservice
 COPY assets ./assets
 COPY oracleservice ./
+COPY .env.$ENVIRONMENT ./
 
-ENTRYPOINT ["python3", "-u", "start.py"]
+CMD ["bash", "-c", "set -a && . ./.env.$ENVIRONMENT && python3 start.py"]

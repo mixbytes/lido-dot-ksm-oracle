@@ -2,3 +2,4 @@
 !/oracleservice/
 !/assets/
 !requirements.txt
+!.env.*

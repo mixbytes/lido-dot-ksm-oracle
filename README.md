@@ -40,6 +40,27 @@ export CONTRACT_ADDRESS=0xc01Ee7f10EA4aF4673cFff62710E1D7792aBa8f3
 To stop the service, send a SIGINT or SIGTERM signal to the process.
 
 
+## Run as docker container
+* Choose one of the configs: `.env.moonbase`, `.env.devnet` or `.env.development`.
+* Edit the `ORACLE_PRIVATE_KEY` variable.
+* If you chose `.env.development`, edit the `CONTRACT_ADDRESS` variable. 
+* Check the other variables in config for relevance.
+
+To build the container:
+```shell
+sudo docker build -t lido-oracle .
+```
+
+To start the service:
+```shell
+export ORACLE_PRIVATE_KEY=0x...
+export ENVIRONMENT=moonbase
+export ORACLE_NUMBER=1
+source .env.$ENVIRONMENT
+sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORACLE_NUMBER} -p $PROMETHEUS_METRICS_PORT:8001 -d lido-oracle 
+```
+
+
 ## Full list of configuration options
 
 * `WS_URL_RELAY` - WS URL of relay chain node. **Required**.
@@ -48,12 +69,12 @@ To stop the service, send a SIGINT or SIGTERM signal to the process.
 * `ORACLE_PRIVATE_KEY` - Oracle private key, 0x prefixed. **Required**.
 * `ABI_PATH` - Path to ABI file. The default value is `assets/oracle.json`.
 * `GAS_LIMIT` - The predefined gas limit for composed transaction. The default value is 10000000.
+* `FREQUENCY_OF_REQUESTS` - The frequency of sending requests to receive the active era in seconds. The default value is 180.
 * `MAX_NUMBER_OF_FAILURE_REQUESTS` - If the number of failure requests exceeds this value, the node (relay chain or parachain) is blacklisted for TIMEOUT seconds during recovery mode. The default value is 10.
 * `TIMEOUT` - The time the failure node stays in the black list in recovery mode. The default value is 60 seconds.
 * `ERA_DURATION_IN_SECONDS` - The duration of era in seconds. Needed for setting the SIGALRM timer. The default value is 180. **Required**.
 * `ERA_DURATION_IN_BLOCKS` - The duration of era in blocks. Needed to calculate the start block number of a new era according to the formula "`era_id` * `ERA_DURATION_IN_SECONDS` + `INITIAL_BLOCK_NUMBER`" The default value is 30. **Required**.
 * `INITIAL_BLOCK_NUMBER` - The sequence number of the block, from which the countdown is done according to the formula: "`era_id` * `ERA_DURATION_IN_SECONDS` + `INITIAL_BLOCK_NUMBER`". The default value is 1. **Required**.
-* `WATCHDOG_DELAY` - Additional time before watchdog is triggered to break connection if there is no era change event more than `ERA_DURATION_IN_SECONDS` seconds. The default value is 5 seconds.
 * `SS58_FORMAT` - The default value is 2. **Required**.
 * `TYPE_REGISTRY_PRESET` - The default value is 'kusama'. **Required**.
 * `PARA_ID` - Parachain ID. The default value is 999. 
