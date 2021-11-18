@@ -25,13 +25,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_ABI_PATH = Path(__file__).parent.parent.as_posix() + '/assets/oracle.json'
 DEFAULT_ERA_DURATION_IN_BLOCKS = 30
 DEFAULT_ERA_DURATION_IN_SECONDS = 180
+DEFAULT_FREQUENCY_OF_REQUESTS = 180
 DEFAULT_GAS_LIMIT = 10000000
 DEFAULT_INITIAL_BLOCK_NUMBER = 1
 DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
 DEFAULT_PROMETHEUS_METRICS_PORT = 8000
 DEFAULT_PARA_ID = 999
 DEFAULT_TIMEOUT = 60
-DEFAULT_WATCHDOG_DELAY = 5
 
 
 def main():
@@ -75,9 +75,6 @@ def main():
         timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
         assert timeout > 0, "'TIMEOUT' parameter must be positive integer"
 
-        watchdog_delay = int(os.getenv('WATCHDOG_DELAY', DEFAULT_WATCHDOG_DELAY))
-        assert watchdog_delay > 0, "'WATCHDOG_DELAY' parameter must be positive integer"
-
         era_duration_in_blocks = int(os.getenv('ERA_DURATION_IN_BLOCKS', DEFAULT_ERA_DURATION_IN_BLOCKS))
         assert era_duration_in_blocks > 0, "'ERA_DURATION_IN_BLOCKS' parameter must be positive integer"
 
@@ -86,6 +83,9 @@ def main():
 
         initial_block_number = int(os.getenv('INITIAL_BLOCK_NUMBER', DEFAULT_INITIAL_BLOCK_NUMBER))
         assert initial_block_number >= 0, "'INITIAL_BLOCK_NUMBER' parameter must be non-negative integer"
+
+        frequency_of_requests = int(os.getenv('FREQUENCY_OF_REQUESTS', DEFAULT_FREQUENCY_OF_REQUESTS))
+        assert frequency_of_requests > 0, "'FREQUENCY_OF_REQUESTS' parameter must be positive integer"
 
         abi = get_abi(abi_path)
 
@@ -103,23 +103,23 @@ def main():
         check_abi(w3, contract_address, abi, oracle.address)
 
         service_params = ServiceParameters(
-            abi=abi,
-            contract_address=contract_address,
-            era_duration_in_blocks=era_duration_in_blocks,
-            era_duration_in_seconds=era_duration_in_seconds,
-            gas_limit=gas_limit,
-            initial_block_number=initial_block_number,
-            max_num_of_failure_reqs=max_number_of_failure_requests,
-            para_id=para_id,
-            ss58_format=ss58_format,
-            substrate=substrate,
-            timeout=timeout,
-            type_registry_preset=type_registry_preset,
-            watchdog_delay=watchdog_delay,
-            ws_urls_relay=ws_urls_relay,
-            ws_urls_para=ws_urls_para,
-            w3=w3,
-        )
+                abi=abi,
+                contract_address=contract_address,
+                era_duration_in_blocks=era_duration_in_blocks,
+                era_duration_in_seconds=era_duration_in_seconds,
+                frequency_of_requests=frequency_of_requests,
+                gas_limit=gas_limit,
+                initial_block_number=initial_block_number,
+                max_num_of_failure_reqs=max_number_of_failure_requests,
+                para_id=para_id,
+                ss58_format=ss58_format,
+                substrate=substrate,
+                timeout=timeout,
+                type_registry_preset=type_registry_preset,
+                ws_urls_relay=ws_urls_relay,
+                ws_urls_para=ws_urls_para,
+                w3=w3,
+            )
 
         oracle = Oracle(account=oracle, service_params=service_params)
 
@@ -138,8 +138,8 @@ def main():
     except KeyboardInterrupt:
         sys.exit()
 
-    signal.signal(signal.SIGTERM, partial(stop_signal_handler, substrate=substrate, timer=oracle.watchdog))
-    signal.signal(signal.SIGINT, partial(stop_signal_handler, substrate=substrate, timer=oracle.watchdog))
+    signal.signal(signal.SIGTERM, partial(stop_signal_handler, substrate=substrate))
+    signal.signal(signal.SIGINT, partial(stop_signal_handler, substrate=substrate))
 
     while True:
         try:

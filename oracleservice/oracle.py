@@ -15,9 +15,7 @@ import asyncio
 import logging
 import signal
 import socket
-import threading as th
 import time
-import os
 import sys
 
 
@@ -35,12 +33,6 @@ class Oracle:
     last_era_reported: dict = field(default_factory=dict)
     previous_era_id: int = -1
     undesirable_urls: set = field(default_factory=set)
-    watchdog: th.Timer = field(init=False)
-
-    def __post_init__(self):
-        self._create_watchdog()
-        if os.name != 'nt':
-            signal.signal(signal.SIGALRM, self._close_connection_to_relaychain)
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -74,8 +66,8 @@ class Oracle:
             if active_era_id > self.previous_era_id:
                 self._handle_era_change(active_era_id, active_era.value['start'])
 
-            # sleep for 5 minutes before next request
-            time.sleep(300)
+            logger.debug(f"Sleep for {self.service_params.frequency_of_requests} seconds until the next request")
+            time.sleep(self.service_params.frequency_of_requests)
 
     def start_recovery_mode(self):
         """Start of the Oracle recovery mode."""
@@ -200,12 +192,6 @@ class Oracle:
                 abi=self.service_params.abi
                ).functions.getStashAccounts().call()
 
-    def _handle_watchdog_tick(self):
-        """Start the timer for SIGALRM and end the thread"""
-        if os.name != 'nt':
-            signal.alarm(self.service_params.era_duration_in_seconds + self.service_params.watchdog_delay)
-        sys.exit()
-
     def _close_connection_to_relaychain(self, sig: int = signal.SIGINT, frame=None):
         """Close connection to relaychain node, increase failure requests counter and exit"""
         self.failure_reqs_count[self.service_params.substrate.url] += 1
@@ -222,10 +208,6 @@ class Oracle:
             raise BrokenPipeError
 
         sys.exit()
-
-    def _create_watchdog(self):
-        """Create watchdog as a Timer"""
-        self.watchdog = th.Timer(1, self._handle_watchdog_tick)
 
     def _wait_in_two_blocks(self, tx_receipt: dict):
         """Wait for two blocks based on information from web3"""
@@ -261,10 +243,6 @@ class Oracle:
         Read the staking parameters for each stash account separately from the block where
         the era value is changed, generate the transaction body, sign and send to the parachain.
         """
-        self.watchdog.cancel()
-        self._create_watchdog()
-        self.watchdog.start()
-
         logger.info(f"Active era index: {era_id}, start timestamp: {era_start_timestamp}")
         metrics_exporter.active_era_id.set(era_id)
         metrics_exporter.total_stashes_free_balance.set(0)
