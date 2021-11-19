@@ -301,16 +301,33 @@ class Oracle:
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
             self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
 
-    def _find_start_block(self, era_id: int) -> str:
+    def _find_start_block(self, era_id: int) -> (str, int):
         """Find the hash of the block at which the era change occurs"""
-        block_number = era_id * self.service_params.era_duration_in_blocks + self.service_params.initial_block_number
-
         try:
-            block_hash = self.service_params.substrate.get_block_hash(block_number)
-            logger.info(f"Block hash: {block_hash}. Block number: {block_number}")
-            return block_hash, block_number
+            current_block_hash = self.service_params.substrate.get_chain_head()
+            current_block_info = self.service_params.substrate.get_block_header(current_block_hash)
+            previous_block_hash = current_block_info['header']['parentHash']
+            previous_block_era = self.service_params.substrate.query(
+                module='Staking',
+                storage_function='ActiveEra',
+                block_hash=previous_block_hash,
+            )
+
+            while previous_block_era.value['index'] >= era_id:
+                current_block_hash = previous_block_hash
+                current_block_info = self.service_params.substrate.get_block_header(current_block_hash)
+                previous_block_hash = current_block_info['header']['parentHash']
+                previous_block_era = self.service_params.substrate.query(
+                    module='Staking',
+                    storage_function='ActiveEra',
+                    block_hash=previous_block_hash,
+                )
+
         except SubstrateRequestException:
             return None, None
+
+        logger.info(f"Block hash: {current_block_hash}. Block number: {current_block_info['header']['number']}")
+        return current_block_hash, current_block_info['header']['number']
 
     def _read_staking_parameters(self, stash: Keypair, block_hash: str = None) -> dict:
         """Read staking parameters from specific block or from the head"""
