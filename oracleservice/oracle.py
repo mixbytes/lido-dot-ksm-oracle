@@ -331,7 +331,7 @@ class Oracle:
                     init_block_number -= step
                     next_block_number = init_block_number - step
 
-            for block_number in range(init_block_number, next_block_number + 1, -1):
+            for block_number in range(init_block_number, next_block_number - 1, -1):
                 current_block = self.service_params.substrate.get_block_header(block_number=block_number)
                 current_block_era_id = self.service_params.substrate.query(
                     module='Staking',
