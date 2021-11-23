@@ -314,6 +314,7 @@ class Oracle:
 
     def _read_staking_parameters(self, stash: Keypair, block_hash: str = None) -> dict:
         """Read staking parameters from specific block or from the head"""
+        logger.info(f"Reading staking parameters for stash {stash.ss58_address}")
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
 
@@ -420,6 +421,7 @@ class Oracle:
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         logger.info(f"Sending a transaction for stash {stash.ss58_address}")
         tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
+        logger.info(f"Transaction hash: {tx_hash.hex()}")
         tx_receipt = self.service_params.w3.eth.wait_for_transaction_receipt(tx_hash)
 
         logger.debug(f"Transaction receipt: {tx_receipt}")
