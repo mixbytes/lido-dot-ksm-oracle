@@ -301,16 +301,52 @@ class Oracle:
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
             self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
 
-    def _find_start_block(self, era_id: int) -> str:
+    def _find_start_block(self, era_id: int) -> (str, int):
         """Find the hash of the block at which the era change occurs"""
-        block_number = era_id * self.service_params.era_duration_in_blocks + self.service_params.initial_block_number
+        steps_in_blocks = [
+                int(self.service_params.era_duration_in_blocks * 0.1),
+                int(self.service_params.era_duration_in_blocks * 0.01),
+                int(self.service_params.era_duration_in_blocks * 0.001),
+            ]
 
         try:
-            block_hash = self.service_params.substrate.get_block_hash(block_number)
-            logger.info(f"Block hash: {block_hash}. Block number: {block_number}")
-            return block_hash, block_number
+            current_block_hash = self.service_params.substrate.get_chain_head()
+            current_block = self.service_params.substrate.get_block_header(current_block_hash)
+            init_block_number = current_block['header']['number']
+
+            for step in steps_in_blocks:
+                next_block_number = init_block_number - step
+
+                while True:
+                    current_block = self.service_params.substrate.get_block_header(block_number=next_block_number)
+                    current_block_era_id = self.service_params.substrate.query(
+                        module='Staking',
+                        storage_function='ActiveEra',
+                        block_hash=current_block['header']['hash'],
+                    ).value['index']
+
+                    if current_block_era_id != era_id:
+                        break
+
+                    init_block_number -= step
+                    next_block_number = init_block_number - step
+
+            for block_number in range(init_block_number, next_block_number - 1, -1):
+                current_block = self.service_params.substrate.get_block_header(block_number=block_number)
+                current_block_era_id = self.service_params.substrate.query(
+                    module='Staking',
+                    storage_function='ActiveEra',
+                    block_hash=current_block['header']['hash'],
+                ).value['index']
+
+                if current_block_era_id != era_id:
+                    break
+
         except SubstrateRequestException:
             return None, None
+
+        logger.info(f"Block hash: {current_block['header']['hash']}. Block number: {current_block['header']['number']}")
+        return current_block['header']['hash'], current_block['header']['number']
 
     def _read_staking_parameters(self, stash: Keypair, block_hash: str = None) -> dict:
         """Read staking parameters from specific block or from the head"""
