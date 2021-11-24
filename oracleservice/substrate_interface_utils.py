@@ -16,9 +16,9 @@ class SubstrateInterfaceUtils:
         urls: list, ss58_format: int = 2,
         type_registry_preset: str = 'kusama',
         timeout: int = 60, undesirable_urls: set = set(),
+        recovering: bool = False, substrate: SubstrateInterface = None,
     ) -> SubstrateInterface:
         """Create Substrate interface with the first node that comes along, if there is no undesirable one"""
-        substrate = None
         tried_all = False
 
         if ss58_format not in SS58_FORMATS:
@@ -32,13 +32,16 @@ class SubstrateInterfaceUtils:
                     continue
 
                 try:
-                    substrate = SubstrateInterface(
-                        url=url,
-                        ss58_format=ss58_format,
-                        type_registry_preset=type_registry_preset,
-                    )
-
-                    substrate.update_type_registry_presets()
+                    if recovering:
+                        substrate.websocket.close()
+                        substrate.websocket.connect(url)
+                    else:
+                        substrate = SubstrateInterface(
+                                url=url,
+                                ss58_format=ss58_format,
+                                type_registry_preset=type_registry_preset,
+                            )
+                        substrate.update_type_registry_presets()
 
                 except (
                     ConnectionRefusedError,
