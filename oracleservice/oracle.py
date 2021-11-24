@@ -65,6 +65,8 @@ class Oracle:
             active_era_id = active_era.value['index']
             if active_era_id > self.previous_era_id:
                 self._handle_era_change(active_era_id, active_era.value['start'])
+            else:
+                logger.info(f"Era {active_era_id - 1} has already been processed. Waiting for the next era")
 
             logger.debug(f"Sleep for {self.service_params.frequency_of_requests} seconds until the next request")
             time.sleep(self.service_params.frequency_of_requests)
@@ -97,6 +99,8 @@ class Oracle:
                         type_registry_preset=self.service_params.type_registry_preset,
                         timeout=self.service_params.timeout,
                         undesirable_urls=self.undesirable_urls,
+                        recovering=True,
+                        substrate=self.service_params.substrate,
                     )
                 metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
                 break
