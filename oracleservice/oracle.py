@@ -33,6 +33,7 @@ class Oracle:
     last_era_reported: dict = field(default_factory=dict)
     previous_era_id: int = -1
     undesirable_urls: set = field(default_factory=set)
+    was_recovered: bool = False
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -65,8 +66,9 @@ class Oracle:
             active_era_id = active_era.value['index']
             if active_era_id > self.previous_era_id:
                 self._handle_era_change(active_era_id, active_era.value['start'])
-            else:
+            elif self.was_recovered:
                 logger.info(f"Era {active_era_id - 1} has already been processed. Waiting for the next era")
+                self.was_recovered = False
 
             logger.debug(f"Sleep for {self.service_params.frequency_of_requests} seconds until the next request")
             time.sleep(self.service_params.frequency_of_requests)
@@ -77,6 +79,7 @@ class Oracle:
         metrics_exporter.is_recovery_mode_active.set(True)
         self.default_mode_started = False
 
+        self.was_recovered = True
         self._recover_connection_to_relaychain()
         self._recover_connection_to_parachain()
 
