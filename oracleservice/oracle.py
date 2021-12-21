@@ -13,10 +13,7 @@ from websockets.exceptions import ConnectionClosedError, InvalidMessage, Invalid
 
 import asyncio
 import logging
-import signal
-import socket
 import time
-import sys
 
 
 logger = logging.getLogger(__name__)
@@ -182,7 +179,10 @@ class Oracle:
 
     def _restore_state(self):
         """Restore the state after starting the default mode"""
-        stash_accounts = self._get_stash_accounts()
+        stash_accounts = self.service_params.w3.eth.contract(
+                address=self.service_params.contract_address,
+                abi=self.service_params.abi,
+            ).functions.getStashAccounts().call()
         for stash_acc in stash_accounts:
             (era_id, is_reported) = self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
@@ -191,13 +191,6 @@ class Oracle:
 
             stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
             self.last_era_reported[stash.public_key] = era_id if is_reported else era_id - 1
-
-    def _get_stash_accounts(self) -> list:
-        """Get list of stash accounts and the last era reported using 'getStashAccounts' function"""
-        return self.service_params.w3.eth.contract(
-                address=self.service_params.contract_address,
-                abi=self.service_params.abi
-               ).functions.getStashAccounts().call()
 
     def _wait_in_two_blocks(self, tx_receipt: dict):
         """Wait for two blocks based on information from web3"""
@@ -239,7 +232,10 @@ class Oracle:
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         with metrics_exporter.para_exceptions_count.count_exceptions():
-            stash_accounts = self._get_stash_accounts()
+            stash_accounts = self.service_params.w3.eth.contract(
+                    address=self.service_params.contract_address,
+                    abi=self.service_params.abi,
+                ).functions.getStashAccounts().call()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
         if not stash_accounts:
             logger.info("No stash accounts found: waiting for the next era")
@@ -378,13 +374,23 @@ class Oracle:
 
     def _get_ledger_data(self, block_hash: str, stash: Keypair) -> dict:
         """Get ledger data using stash account address"""
-        controller = SubstrateInterfaceUtils.get_controller(self.service_params.substrate, stash, block_hash)
+        controller = self.service_params.substrate.query(
+                module='Staking',
+                storage_function='Bonded',
+                params=[stash.ss58_address],
+                block_hash=block_hash,
+            )
         if controller.value is None:
             return None
 
         controller = Keypair(ss58_address=controller.value)
 
-        ledger = SubstrateInterfaceUtils.get_ledger(self.service_params.substrate, controller, block_hash)
+        ledger = self.service_params.substrate.query(
+                module='Staking',
+                storage_function='Bonded',
+                params=[controller.ss58_address],
+                block_hash=block_hash,
+            )
 
         result = {'controller': controller, 'stash': stash}
         result.update(ledger.value)
@@ -405,7 +411,12 @@ class Oracle:
 
     def _get_stash_free_balance(self, stash: Keypair, block_hash: str) -> int:
         """Get stash accounts free balances"""
-        account_info = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash, block_hash)
+        account_info = self.service_params.substrate.query(
+                module='System',
+                storage_function='Account',
+                params=[stash.ss58_address],
+                block_hash=block_hash,
+            )
         metrics_exporter.total_stashes_free_balance.inc(account_info.value['data']['free'])
 
         return account_info.value['data']['free']
@@ -418,8 +429,16 @@ class Oracle:
         if block_hash is None:
             block_hash = self.service_params.substrate.get_chain_head()
 
-        staking_validators = SubstrateInterfaceUtils.get_validators(self.service_params.substrate, block_hash)
-        staking_nominators = SubstrateInterfaceUtils.get_nominators(self.service_params.substrate, block_hash)
+        staking_validators = self.service_params.substrate.query(
+                module='Session',
+                storage_function='Validators',
+                block_hash=block_hash,
+            )
+        staking_nominators = self.service_params.substrate.query_map(
+                module='Staking',
+                storage_function='Nominators',
+                block_hash=block_hash,
+            )
 
         nominators = set(nominator.value for nominator, _ in staking_nominators)
         validators = set(validator for validator in staking_validators.value)

@@ -1,4 +1,4 @@
-from substrateinterface import Keypair, SubstrateInterface
+from substrateinterface import SubstrateInterface
 from websocket._exceptions import WebSocketAddressException
 from websockets.exceptions import InvalidStatusCode
 
@@ -63,49 +63,6 @@ class SubstrateInterfaceUtils:
             logger.error("Failed to connect to any node")
             logger.info(f"Timeout: {timeout} seconds")
             time.sleep(timeout)
-
-    def get_validators(substrate: SubstrateInterface, block_hash: str):
-        """Get list of validators using 'Validators' storage function from 'Session' module"""
-        return substrate.query(
-                module='Session',
-                storage_function='Validators',
-                block_hash=block_hash,
-            )
-
-    def get_nominators(substrate: SubstrateInterface, block_hash: str):
-        """Get list of nominators using 'Nominators' storage function from 'Staking' module"""
-        return substrate.query_map(
-                module='Staking',
-                storage_function='Nominators',
-                block_hash=block_hash,
-            )
-
-    def get_account(substrate: SubstrateInterface, stash: Keypair, block_hash: str):
-        """Get account using 'Account' storage function from 'System' module"""
-        return substrate.query(
-                module='System',
-                storage_function='Account',
-                params=[stash.ss58_address],
-                block_hash=block_hash,
-            )
-
-    def get_ledger(substrate: SubstrateInterface, controller: Keypair, block_hash: str):
-        """Get ledger using 'Ledger' storage function from 'Staking' module"""
-        return substrate.query(
-            module='Staking',
-            storage_function='Ledger',
-            params=[controller.ss58_address],
-            block_hash=block_hash,
-        )
-
-    def get_controller(substrate: SubstrateInterface, stash: Keypair, block_hash: str):
-        """Get controller using 'Bonded' storage function from 'Staking' module"""
-        return substrate.query(
-                module='Staking',
-                storage_function='Bonded',
-                params=[stash.ss58_address],
-                block_hash=block_hash,
-            )
 
     def get_parachain_address(_para_id: int) -> str:
         """Get parachain address using parachain id with ss58 format provided"""
