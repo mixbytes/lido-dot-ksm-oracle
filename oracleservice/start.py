@@ -7,8 +7,7 @@ from prometheus_client import start_http_server
 from service_parameters import ServiceParameters
 from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
-from substrate_interface_utils import SubstrateInterfaceUtils
-from utils import create_provider, get_abi, is_invalid_urls, stop_signal_handler, check_abi, check_abi_path, check_contract_address, check_log_level  # noqa: E501
+from utils import create_interface, create_provider, get_abi, is_invalid_urls, stop_signal_handler, check_abi, check_abi_path, check_contract_address, check_log_level  # noqa: E501
 from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
 from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
@@ -90,7 +89,7 @@ def main():
         abi = get_abi(abi_path)
 
         w3 = create_provider(ws_urls_para, timeout)
-        substrate = SubstrateInterfaceUtils.create_interface(ws_urls_relay, ss58_format, type_registry_preset)
+        substrate = create_interface(ws_urls_relay, ss58_format, type_registry_preset)
 
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
         if oracle_private_key is None:

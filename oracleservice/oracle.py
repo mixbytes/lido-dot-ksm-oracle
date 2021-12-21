@@ -4,8 +4,7 @@ from service_parameters import ServiceParameters
 from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface import Keypair
-from substrate_interface_utils import SubstrateInterfaceUtils
-from utils import create_provider
+from utils import create_interface, create_provider
 from web3.exceptions import BadFunctionCallOutput
 from web3 import Account
 from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
@@ -93,15 +92,15 @@ class Oracle:
                 if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_num_of_failure_reqs:
                     self.undesirable_urls.add(self.service_params.substrate.url)
                     self.service_params.substrate.websocket.shutdown()
-                    self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
-                        urls=self.service_params.ws_urls_relay,
-                        ss58_format=self.service_params.ss58_format,
-                        type_registry_preset=self.service_params.type_registry_preset,
-                        timeout=self.service_params.timeout,
-                        undesirable_urls=self.undesirable_urls,
-                        recovering=True,
-                        substrate=self.service_params.substrate,
-                    )
+                    self.service_params.substrate = create_interface(
+                            urls=self.service_params.ws_urls_relay,
+                            ss58_format=self.service_params.ss58_format,
+                            type_registry_preset=self.service_params.type_registry_preset,
+                            timeout=self.service_params.timeout,
+                            undesirable_urls=self.undesirable_urls,
+                            recovering=True,
+                            substrate=self.service_params.substrate,
+                        )
                 metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
                 break
 
