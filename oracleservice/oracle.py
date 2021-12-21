@@ -102,7 +102,6 @@ class Oracle:
                             type_registry_preset=self.service_params.type_registry_preset,
                             timeout=self.service_params.timeout,
                             undesirable_urls=self.undesirable_urls,
-                            recovering=True,
                             substrate=self.service_params.substrate,
                         )
                 metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
@@ -188,9 +187,9 @@ class Oracle:
             ).functions.getStashAccounts().call()
         for stash_acc in stash_accounts:
             (era_id, is_reported) = self.service_params.w3.eth.contract(
-                address=self.service_params.contract_address,
-                abi=self.service_params.abi
-            ).functions.isReportedLastEra(self.account.address, stash_acc).call()
+                    address=self.service_params.contract_address,
+                    abi=self.service_params.abi
+                ).functions.isReportedLastEra(self.account.address, stash_acc).call()
 
             stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
             self.last_era_reported[stash.public_key] = era_id if is_reported else era_id - 1
@@ -309,10 +308,10 @@ class Oracle:
                 while True:
                     current_block = self.service_params.substrate.get_block_header(block_number=next_block_number)
                     current_block_era_id = self.service_params.substrate.query(
-                        module='Staking',
-                        storage_function='ActiveEra',
-                        block_hash=current_block['header']['hash'],
-                    ).value['index']
+                            module='Staking',
+                            storage_function='ActiveEra',
+                            block_hash=current_block['header']['hash'],
+                        ).value['index']
 
                     if current_block_era_id != era_id:
                         break
@@ -323,10 +322,10 @@ class Oracle:
             for block_number in range(init_block_number, next_block_number - 1, -1):
                 current_block = self.service_params.substrate.get_block_header(block_number=block_number)
                 current_block_era_id = self.service_params.substrate.query(
-                    module='Staking',
-                    storage_function='ActiveEra',
-                    block_hash=current_block['header']['hash'],
-                ).value['index']
+                        module='Staking',
+                        storage_function='ActiveEra',
+                        block_hash=current_block['header']['hash'],
+                    ).value['index']
 
                 if current_block_era_id != era_id:
                     break
@@ -342,11 +341,11 @@ class Oracle:
         nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
 
         return self.service_params.w3.eth.contract(
-                address=self.service_params.contract_address,
-                abi=self.service_params.abi
+                    address=self.service_params.contract_address,
+                    abi=self.service_params.abi
                ).functions.reportRelay(
-                era_id,
-                staking_parameters,
+                    era_id,
+                    staking_parameters,
                ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': nonce})
 
     def _sign_and_send_to_para(self, tx: dict, stash: Keypair, era_id: int) -> bool:

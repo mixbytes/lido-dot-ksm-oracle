@@ -91,9 +91,12 @@ def create_interface(
         urls: list, ss58_format: int = 2,
         type_registry_preset: str = 'kusama',
         timeout: int = 60, undesirable_urls: set = set(),
-        recovering: bool = False, substrate: SubstrateInterface = None,
+        substrate: SubstrateInterface = None,
 ) -> SubstrateInterface:
     """Create Substrate interface with the first node that comes along, if there is no undesirable one"""
+    if substrate is None:
+        recovering = False
+
     tried_all = False
 
     while True:

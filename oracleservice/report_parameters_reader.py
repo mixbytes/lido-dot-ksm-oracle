@@ -81,7 +81,6 @@ class ReportParametersReader:
                 params=[controller.ss58_address],
                 block_hash=block_hash,
             )
-
         if slashing_spans.value is None:
             result['slashingSpans_number'] = 0
         else:
