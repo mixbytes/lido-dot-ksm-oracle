@@ -199,23 +199,6 @@ class Oracle:
                 abi=self.service_params.abi
                ).functions.getStashAccounts().call()
 
-    def _close_connection_to_relaychain(self, sig: int = signal.SIGINT, frame=None):
-        """Close connection to relaychain node, increase failure requests counter and exit"""
-        self.failure_reqs_count[self.service_params.substrate.url] += 1
-        logger.debug(f"Closing connection to relaychain node: {self.service_params.substrate.url}")
-        try:
-            self.service_params.substrate.websocket.sock.shutdown(socket.SHUT_RDWR)
-        except (
-            AttributeError,
-            OSError,
-        ) as exc:
-            logger.warning(exc)
-
-        if sig == signal.SIGALRM:
-            raise BrokenPipeError
-
-        sys.exit()
-
     def _wait_in_two_blocks(self, tx_receipt: dict):
         """Wait for two blocks based on information from web3"""
         if 'blockNumber' not in tx_receipt:
