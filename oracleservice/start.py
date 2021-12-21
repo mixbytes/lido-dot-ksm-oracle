@@ -39,6 +39,8 @@ def main():
         check_log_level(log_level)
         init_log(stdout_level=log_level)
 
+        logger.info("Checking the configuration parameters")
+
         prometheus_metrics_port = int(os.getenv('PROMETHEUS_METRICS_PORT', DEFAULT_PROMETHEUS_METRICS_PORT))
         logger.info(f"Starting the prometheus server on port {prometheus_metrics_port}")
         start_http_server(prometheus_metrics_port)
@@ -99,6 +101,7 @@ def main():
 
         check_contract_address(w3, contract_address)
         oracle = w3.eth.account.from_key(oracle_private_key)
+        logger.info("Checking ABI")
         check_abi(w3, contract_address, abi, oracle.address)
 
         service_params = ServiceParameters(
@@ -121,6 +124,7 @@ def main():
             )
 
         oracle = Oracle(account=oracle, service_params=service_params)
+        logger.info("Finished checking the configuration parameters")
 
     except (
         ABIFunctionNotFound,
@@ -128,11 +132,12 @@ def main():
         FileNotFoundError,
         InvalidMessage,
         IsADirectoryError,
+        KeyError,
         OSError,
         OverflowError,
         ValueError,
     ) as exc:
-        sys.exit(exc)
+        sys.exit(f"{type(exc)}: {exc}")
 
     except KeyboardInterrupt:
         sys.exit()
