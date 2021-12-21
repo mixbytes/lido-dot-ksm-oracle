@@ -135,6 +135,7 @@ def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
             'unlocking': [],
             'claimedRewards': [],
             'stashBalance': 0,
+            'slashingSpans': 0,
         }).call()
 
         if not hasattr(contract.functions, 'getStashAccounts'):
