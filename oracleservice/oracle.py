@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from prometheus_metrics import metrics_exporter
+from report_parameters_reader import ReportParametersReader
 from service_parameters import ServiceParameters
 from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
@@ -30,6 +31,9 @@ class Oracle:
     previous_era_id: int = -1
     undesirable_urls: set = field(default_factory=set)
     was_recovered: bool = False
+
+    def __post_init__(self):
+        self.report_parameters_reader = ReportParametersReader(self.service_params)
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -258,7 +262,7 @@ class Oracle:
                 logger.info(f"The report has already been sent for stash {stash.ss58_address}")
                 continue
 
-            staking_parameters = self._read_staking_parameters(stash, block_hash)
+            staking_parameters = self.report_parameters_reader.get_stash_staking_parameters(stash, block_hash)
             self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
             logger.info('; '.join([
@@ -332,123 +336,6 @@ class Oracle:
 
         logger.info(f"Block hash: {current_block['header']['hash']}. Block number: {current_block['header']['number']}")
         return current_block['header']['hash'], current_block['header']['number']
-
-    def _read_staking_parameters(self, stash: Keypair, block_hash: str = None) -> dict:
-        """Read staking parameters from specific block or from the head"""
-        logger.info(f"Reading staking parameters for stash {stash.ss58_address}")
-        if block_hash is None:
-            block_hash = self.service_params.substrate.get_chain_head()
-
-        with metrics_exporter.relay_exceptions_count.count_exceptions():
-            stash_free_balance = self._get_stash_free_balance(stash, block_hash)
-            stake_status = self._get_stake_status(stash, block_hash)
-            staking_ledger_result = self._get_ledger_data(block_hash, stash)
-
-        if staking_ledger_result is None:
-            return {
-                'stashAccount': stash.public_key,
-                'controllerAccount': stash.public_key,
-                'stakeStatus': 3,  # this value means that stake status is None
-                'activeBalance': 0,
-                'totalBalance': 0,
-                'unlocking': [],
-                'claimedRewards': [],
-                'stashBalance': stash_free_balance,
-                'slashingSpans': 0,
-            }
-
-        controller = staking_ledger_result['controller']
-
-        return {
-            'stashAccount': stash.public_key,
-            'controllerAccount': controller.public_key,
-            'stakeStatus': stake_status,
-            'activeBalance': staking_ledger_result['active'],
-            'totalBalance': staking_ledger_result['total'],
-            'unlocking': [{'balance': elem['value'], 'era': elem['era']} for elem in staking_ledger_result['unlocking']],
-            'claimedRewards': [],  # put aside until storage proof has been implemented // staking_ledger_result['claimedRewards'],
-            'stashBalance': stash_free_balance,
-            'slashingSpans': staking_ledger_result['slashingSpans_number'],
-        }
-
-    def _get_ledger_data(self, block_hash: str, stash: Keypair) -> dict:
-        """Get ledger data using stash account address"""
-        controller = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='Bonded',
-                params=[stash.ss58_address],
-                block_hash=block_hash,
-            )
-        if controller.value is None:
-            return None
-
-        controller = Keypair(ss58_address=controller.value)
-
-        ledger = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='Bonded',
-                params=[controller.ss58_address],
-                block_hash=block_hash,
-            )
-
-        result = {'controller': controller, 'stash': stash}
-        result.update(ledger.value)
-
-        slashing_spans = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='SlashingSpans',
-                params=[controller.ss58_address],
-                block_hash=block_hash,
-            )
-
-        if slashing_spans.value is None:
-            result['slashingSpans_number'] = 0
-        else:
-            result['slashingSpans_number'] = len(slashing_spans.value['prior'])
-
-        return result
-
-    def _get_stash_free_balance(self, stash: Keypair, block_hash: str) -> int:
-        """Get stash accounts free balances"""
-        account_info = self.service_params.substrate.query(
-                module='System',
-                storage_function='Account',
-                params=[stash.ss58_address],
-                block_hash=block_hash,
-            )
-        metrics_exporter.total_stashes_free_balance.inc(account_info.value['data']['free'])
-
-        return account_info.value['data']['free']
-
-    def _get_stake_status(self, stash: Keypair, block_hash: str = None) -> int:
-        """
-        Get stash account status.
-        0 - Idle, 1 - Nominator, 2 - Validator, 3 - None
-        """
-        if block_hash is None:
-            block_hash = self.service_params.substrate.get_chain_head()
-
-        staking_validators = self.service_params.substrate.query(
-                module='Session',
-                storage_function='Validators',
-                block_hash=block_hash,
-            )
-        staking_nominators = self.service_params.substrate.query_map(
-                module='Staking',
-                storage_function='Nominators',
-                block_hash=block_hash,
-            )
-
-        nominators = set(nominator.value for nominator, _ in staking_nominators)
-        validators = set(validator for validator in staking_validators.value)
-
-        if stash.ss58_address in nominators:
-            return 1
-
-        if stash.ss58_address in validators:
-            return 2
-
-        return 0
 
     def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
