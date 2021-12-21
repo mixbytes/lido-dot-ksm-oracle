@@ -416,7 +416,7 @@ class Oracle:
         if slashing_spans.value is None:
             result['slashingSpans_number'] = 0
         else:
-            result['slashingSpans_number'] = len(slashing_spans.value)
+            result['slashingSpans_number'] = len(slashing_spans.value['prior'])
 
         return result
 
