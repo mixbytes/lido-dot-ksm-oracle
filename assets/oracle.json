@@ -66,6 +66,32 @@
     },
     {
       "inputs": [],
+      "name": "ANCHOR_ERA_ID",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "ANCHOR_TIMESTAMP",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
       "name": "LIDO",
       "outputs": [
         {
@@ -132,6 +158,19 @@
     {
       "inputs": [],
       "name": "RELAY_SECONDS_PER_ERA",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "SECONDS_PER_ERA",
       "outputs": [
         {
           "internalType": "uint64",
@@ -398,6 +437,11 @@
               "internalType": "uint128",
               "name": "stashBalance",
               "type": "uint128"
+            },
+            {
+              "internalType": "uint32",
+              "name": "slashingSpans",
+              "type": "uint32"
             }
           ],
           "internalType": "struct Types.OracleData",
@@ -413,6 +457,29 @@
     {
       "inputs": [],
       "name": "resume",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint64",
+          "name": "_anchorEraId",
+          "type": "uint64"
+        },
+        {
+          "internalType": "uint64",
+          "name": "_anchorTimestamp",
+          "type": "uint64"
+        },
+        {
+          "internalType": "uint64",
+          "name": "_secondsPerEra",
+          "type": "uint64"
+        }
+      ],
+      "name": "setAnchorEra",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -461,4 +528,4 @@
       "stateMutability": "nonpayable",
       "type": "function"
     }
-  ]
+]

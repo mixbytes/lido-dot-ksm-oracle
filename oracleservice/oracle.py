@@ -376,6 +376,7 @@ class Oracle:
                 'unlocking': [],
                 'claimedRewards': [],
                 'stashBalance': stash_free_balance,
+                'slashingSpans': 0,
             }
 
         controller = staking_ledger_result['controller']
@@ -389,6 +390,7 @@ class Oracle:
             'unlocking': [{'balance': elem['value'], 'era': elem['era']} for elem in staking_ledger_result['unlocking']],
             'claimedRewards': [],  # put aside until storage proof has been implemented // staking_ledger_result['claimedRewards'],
             'stashBalance': stash_free_balance,
+            'slashingSpans': staking_ledger_result['slashingSpans_number'],
         }
 
     def _get_ledger_data(self, block_hash: str, stash: Keypair) -> dict:
@@ -403,6 +405,18 @@ class Oracle:
 
         result = {'controller': controller, 'stash': stash}
         result.update(ledger.value)
+
+        slashing_spans = self.service_params.substrate.query(
+                module='Staking',
+                storage_function='SlashingSpans',
+                params=[controller.ss58_address],
+                block_hash=block_hash,
+            )
+
+        if slashing_spans.value is None:
+            result['slashingSpans_number'] = 0
+        else:
+            result['slashingSpans_number'] = len(slashing_spans.value['prior'])
 
         return result
 
