@@ -13,6 +13,7 @@ class ServiceParameters:
     era_duration_in_seconds: int = 180
     initial_block_number: int = 1
 
+    debug_mode: bool = False
     frequency_of_requests: int = 300
     max_num_of_failure_reqs: int = 10
     timeout: int = 60

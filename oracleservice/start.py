@@ -88,6 +88,8 @@ def main():
         frequency_of_requests = int(os.getenv('FREQUENCY_OF_REQUESTS', DEFAULT_FREQUENCY_OF_REQUESTS))
         assert frequency_of_requests > 0, "'FREQUENCY_OF_REQUESTS' parameter must be positive integer"
 
+        debug_mode = True if os.getenv('ORACLE_MODE') == 'DEBUG' else False
+
         abi = get_abi(abi_path)
 
         w3 = create_provider(ws_urls_para, timeout)
@@ -107,6 +109,7 @@ def main():
         service_params = ServiceParameters(
                 abi=abi,
                 contract_address=contract_address,
+                debug_mode=debug_mode,
                 era_duration_in_blocks=era_duration_in_blocks,
                 era_duration_in_seconds=era_duration_in_seconds,
                 frequency_of_requests=frequency_of_requests,

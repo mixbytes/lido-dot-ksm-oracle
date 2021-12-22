@@ -277,7 +277,10 @@ class Oracle:
 
             with metrics_exporter.para_exceptions_count.count_exceptions():
                 tx = self._create_tx(era_id, staking_parameters)
-                self._sign_and_send_to_para(tx, stash, era_id)
+                if not self.service_params.debug_mode:
+                    self._sign_and_send_to_para(tx, stash, era_id)
+                else:
+                    logger.info(f"Skipping sending the transaction for stash {stash.ss58_address}: oracle is running in debug mode")
             self.last_era_reported[stash.public_key] = era_id
 
         logger.info("Waiting for the next era")
