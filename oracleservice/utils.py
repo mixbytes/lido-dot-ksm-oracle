@@ -94,9 +94,7 @@ def create_interface(
         substrate: SubstrateInterface = None,
 ) -> SubstrateInterface:
     """Create Substrate interface with the first node that comes along, if there is no undesirable one"""
-    if substrate is None:
-        recovering = False
-
+    recovering = False if substrate is None else True
     tried_all = False
 
     while True:

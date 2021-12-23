@@ -67,7 +67,7 @@ class ReportParametersReader:
 
         ledger = self.service_params.substrate.query(
                 module='Staking',
-                storage_function='Bonded',
+                storage_function='Ledger',
                 params=[controller.ss58_address],
                 block_hash=block_hash,
             )
