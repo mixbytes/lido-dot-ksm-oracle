@@ -9,7 +9,6 @@ import json
 import logging
 import socket
 import sys
-import threading as th
 import time
 import urllib
 
@@ -24,8 +23,8 @@ LOG_LEVELS = (
 )
 
 
-def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, timer: th.Timer = None):
-    """Handle signal, close substrate interface websocket connection, if it is open, stop timer thread and terminate the process"""
+def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None):
+    """Handle signal, close substrate interface websocket connection and terminate the process"""
     logger.debug(f"Receiving signal: {sig}")
     if substrate is not None:
         logger.debug("Closing substrate interface websocket connection")
@@ -38,14 +37,6 @@ def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, t
             logger.warning(exc)
         else:
             logger.debug(f"Connection to relaychain node {substrate.url} is closed")
-
-    if timer is not None:
-        try:
-            if timer.is_alive():
-                timer.cancel()
-
-        except Exception as exc:
-            logger.warning(exc)
 
     sys.exit()
 
