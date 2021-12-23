@@ -7,8 +7,7 @@ from prometheus_client import start_http_server
 from service_parameters import ServiceParameters
 from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
-from substrate_interface_utils import SubstrateInterfaceUtils
-from utils import create_provider, get_abi, is_invalid_urls, stop_signal_handler, check_abi, check_abi_path, check_contract_address, check_log_level  # noqa: E501
+from utils import create_interface, create_provider, get_abi, is_invalid_urls, stop_signal_handler, check_abi, check_abi_path, check_contract_address, check_log_level  # noqa: E501
 from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
 from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
@@ -39,6 +38,8 @@ def main():
         log_level = os.getenv('LOG_LEVEL_STDOUT', 'INFO')
         check_log_level(log_level)
         init_log(stdout_level=log_level)
+
+        logger.info("Checking the configuration parameters")
 
         prometheus_metrics_port = int(os.getenv('PROMETHEUS_METRICS_PORT', DEFAULT_PROMETHEUS_METRICS_PORT))
         logger.info(f"Starting the prometheus server on port {prometheus_metrics_port}")
@@ -87,10 +88,12 @@ def main():
         frequency_of_requests = int(os.getenv('FREQUENCY_OF_REQUESTS', DEFAULT_FREQUENCY_OF_REQUESTS))
         assert frequency_of_requests > 0, "'FREQUENCY_OF_REQUESTS' parameter must be positive integer"
 
+        debug_mode = True if os.getenv('ORACLE_MODE') == 'DEBUG' else False
+
         abi = get_abi(abi_path)
 
         w3 = create_provider(ws_urls_para, timeout)
-        substrate = SubstrateInterfaceUtils.create_interface(ws_urls_relay, ss58_format, type_registry_preset)
+        substrate = create_interface(ws_urls_relay, ss58_format, type_registry_preset)
 
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
         if oracle_private_key is None:
@@ -100,11 +103,13 @@ def main():
 
         check_contract_address(w3, contract_address)
         oracle = w3.eth.account.from_key(oracle_private_key)
+        logger.info("Checking ABI")
         check_abi(w3, contract_address, abi, oracle.address)
 
         service_params = ServiceParameters(
                 abi=abi,
                 contract_address=contract_address,
+                debug_mode=debug_mode,
                 era_duration_in_blocks=era_duration_in_blocks,
                 era_duration_in_seconds=era_duration_in_seconds,
                 frequency_of_requests=frequency_of_requests,
@@ -122,6 +127,7 @@ def main():
             )
 
         oracle = Oracle(account=oracle, service_params=service_params)
+        logger.info("Finished checking the configuration parameters")
 
     except (
         ABIFunctionNotFound,
@@ -129,11 +135,12 @@ def main():
         FileNotFoundError,
         InvalidMessage,
         IsADirectoryError,
+        KeyError,
         OSError,
         OverflowError,
         ValueError,
     ) as exc:
-        sys.exit(exc)
+        sys.exit(f"{type(exc)}: {exc}")
 
     except KeyboardInterrupt:
         sys.exit()

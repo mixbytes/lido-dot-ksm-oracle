@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 from prometheus_metrics import metrics_exporter
+from report_parameters_reader import ReportParametersReader
 from service_parameters import ServiceParameters
 from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface import Keypair
-from substrate_interface_utils import SubstrateInterfaceUtils
-from utils import create_provider
+from utils import create_interface, create_provider
 from web3.exceptions import BadFunctionCallOutput
 from web3 import Account
 from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
@@ -13,10 +13,7 @@ from websockets.exceptions import ConnectionClosedError, InvalidMessage, Invalid
 
 import asyncio
 import logging
-import signal
-import socket
 import time
-import sys
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +31,9 @@ class Oracle:
     previous_era_id: int = -1
     undesirable_urls: set = field(default_factory=set)
     was_recovered: bool = False
+
+    def __post_init__(self):
+        self.report_parameters_reader = ReportParametersReader(self.service_params)
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -96,15 +96,14 @@ class Oracle:
                 if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_num_of_failure_reqs:
                     self.undesirable_urls.add(self.service_params.substrate.url)
                     self.service_params.substrate.websocket.shutdown()
-                    self.service_params.substrate = SubstrateInterfaceUtils.create_interface(
-                        urls=self.service_params.ws_urls_relay,
-                        ss58_format=self.service_params.ss58_format,
-                        type_registry_preset=self.service_params.type_registry_preset,
-                        timeout=self.service_params.timeout,
-                        undesirable_urls=self.undesirable_urls,
-                        recovering=True,
-                        substrate=self.service_params.substrate,
-                    )
+                    self.service_params.substrate = create_interface(
+                            urls=self.service_params.ws_urls_relay,
+                            ss58_format=self.service_params.ss58_format,
+                            type_registry_preset=self.service_params.type_registry_preset,
+                            timeout=self.service_params.timeout,
+                            undesirable_urls=self.undesirable_urls,
+                            substrate=self.service_params.substrate,
+                        )
                 metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
                 break
 
@@ -182,39 +181,18 @@ class Oracle:
 
     def _restore_state(self):
         """Restore the state after starting the default mode"""
-        stash_accounts = self._get_stash_accounts()
+        stash_accounts = self.service_params.w3.eth.contract(
+                address=self.service_params.contract_address,
+                abi=self.service_params.abi,
+            ).functions.getStashAccounts().call()
         for stash_acc in stash_accounts:
             (era_id, is_reported) = self.service_params.w3.eth.contract(
-                address=self.service_params.contract_address,
-                abi=self.service_params.abi
-            ).functions.isReportedLastEra(self.account.address, stash_acc).call()
+                    address=self.service_params.contract_address,
+                    abi=self.service_params.abi
+                ).functions.isReportedLastEra(self.account.address, stash_acc).call()
 
             stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
             self.last_era_reported[stash.public_key] = era_id if is_reported else era_id - 1
-
-    def _get_stash_accounts(self) -> list:
-        """Get list of stash accounts and the last era reported using 'getStashAccounts' function"""
-        return self.service_params.w3.eth.contract(
-                address=self.service_params.contract_address,
-                abi=self.service_params.abi
-               ).functions.getStashAccounts().call()
-
-    def _close_connection_to_relaychain(self, sig: int = signal.SIGINT, frame=None):
-        """Close connection to relaychain node, increase failure requests counter and exit"""
-        self.failure_reqs_count[self.service_params.substrate.url] += 1
-        logger.debug(f"Closing connection to relaychain node: {self.service_params.substrate.url}")
-        try:
-            self.service_params.substrate.websocket.sock.shutdown(socket.SHUT_RDWR)
-        except (
-            AttributeError,
-            OSError,
-        ) as exc:
-            logger.warning(exc)
-
-        if sig == signal.SIGALRM:
-            raise BrokenPipeError
-
-        sys.exit()
 
     def _wait_in_two_blocks(self, tx_receipt: dict):
         """Wait for two blocks based on information from web3"""
@@ -256,7 +234,10 @@ class Oracle:
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         with metrics_exporter.para_exceptions_count.count_exceptions():
-            stash_accounts = self._get_stash_accounts()
+            stash_accounts = self.service_params.w3.eth.contract(
+                    address=self.service_params.contract_address,
+                    abi=self.service_params.abi,
+                ).functions.getStashAccounts().call()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
         if not stash_accounts:
             logger.info("No stash accounts found: waiting for the next era")
@@ -280,7 +261,7 @@ class Oracle:
                 logger.info(f"The report has already been sent for stash {stash.ss58_address}")
                 continue
 
-            staking_parameters = self._read_staking_parameters(stash, block_hash)
+            staking_parameters = self.report_parameters_reader.get_stash_staking_parameters(stash, block_hash)
             self.failure_reqs_count[self.service_params.substrate.url] -= 1
 
             logger.info('; '.join([
@@ -296,7 +277,10 @@ class Oracle:
 
             with metrics_exporter.para_exceptions_count.count_exceptions():
                 tx = self._create_tx(era_id, staking_parameters)
-                self._sign_and_send_to_para(tx, stash, era_id)
+                if not self.service_params.debug_mode:
+                    self._sign_and_send_to_para(tx, stash, era_id)
+                else:
+                    logger.info(f"Skipping sending the transaction for stash {stash.ss58_address}: oracle is running in debug mode")
             self.last_era_reported[stash.public_key] = era_id
 
         logger.info("Waiting for the next era")
@@ -327,10 +311,10 @@ class Oracle:
                 while True:
                     current_block = self.service_params.substrate.get_block_header(block_number=next_block_number)
                     current_block_era_id = self.service_params.substrate.query(
-                        module='Staking',
-                        storage_function='ActiveEra',
-                        block_hash=current_block['header']['hash'],
-                    ).value['index']
+                            module='Staking',
+                            storage_function='ActiveEra',
+                            block_hash=current_block['header']['hash'],
+                        ).value['index']
 
                     if current_block_era_id != era_id:
                         break
@@ -341,10 +325,10 @@ class Oracle:
             for block_number in range(init_block_number, next_block_number - 1, -1):
                 current_block = self.service_params.substrate.get_block_header(block_number=block_number)
                 current_block_era_id = self.service_params.substrate.query(
-                    module='Staking',
-                    storage_function='ActiveEra',
-                    block_hash=current_block['header']['hash'],
-                ).value['index']
+                        module='Staking',
+                        storage_function='ActiveEra',
+                        block_hash=current_block['header']['hash'],
+                    ).value['index']
 
                 if current_block_era_id != era_id:
                     break
@@ -355,110 +339,16 @@ class Oracle:
         logger.info(f"Block hash: {current_block['header']['hash']}. Block number: {current_block['header']['number']}")
         return current_block['header']['hash'], current_block['header']['number']
 
-    def _read_staking_parameters(self, stash: Keypair, block_hash: str = None) -> dict:
-        """Read staking parameters from specific block or from the head"""
-        logger.info(f"Reading staking parameters for stash {stash.ss58_address}")
-        if block_hash is None:
-            block_hash = self.service_params.substrate.get_chain_head()
-
-        with metrics_exporter.relay_exceptions_count.count_exceptions():
-            stash_free_balance = self._get_stash_free_balance(stash, block_hash)
-            stake_status = self._get_stake_status(stash, block_hash)
-            staking_ledger_result = self._get_ledger_data(block_hash, stash)
-
-        if staking_ledger_result is None:
-            return {
-                'stashAccount': stash.public_key,
-                'controllerAccount': stash.public_key,
-                'stakeStatus': 3,  # this value means that stake status is None
-                'activeBalance': 0,
-                'totalBalance': 0,
-                'unlocking': [],
-                'claimedRewards': [],
-                'stashBalance': stash_free_balance,
-                'slashingSpans': 0,
-            }
-
-        controller = staking_ledger_result['controller']
-
-        return {
-            'stashAccount': stash.public_key,
-            'controllerAccount': controller.public_key,
-            'stakeStatus': stake_status,
-            'activeBalance': staking_ledger_result['active'],
-            'totalBalance': staking_ledger_result['total'],
-            'unlocking': [{'balance': elem['value'], 'era': elem['era']} for elem in staking_ledger_result['unlocking']],
-            'claimedRewards': [],  # put aside until storage proof has been implemented // staking_ledger_result['claimedRewards'],
-            'stashBalance': stash_free_balance,
-            'slashingSpans': staking_ledger_result['slashingSpans_number'],
-        }
-
-    def _get_ledger_data(self, block_hash: str, stash: Keypair) -> dict:
-        """Get ledger data using stash account address"""
-        controller = SubstrateInterfaceUtils.get_controller(self.service_params.substrate, stash, block_hash)
-        if controller.value is None:
-            return None
-
-        controller = Keypair(ss58_address=controller.value)
-
-        ledger = SubstrateInterfaceUtils.get_ledger(self.service_params.substrate, controller, block_hash)
-
-        result = {'controller': controller, 'stash': stash}
-        result.update(ledger.value)
-
-        slashing_spans = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='SlashingSpans',
-                params=[controller.ss58_address],
-                block_hash=block_hash,
-            )
-
-        if slashing_spans.value is None:
-            result['slashingSpans_number'] = 0
-        else:
-            result['slashingSpans_number'] = len(slashing_spans.value['prior'])
-
-        return result
-
-    def _get_stash_free_balance(self, stash: Keypair, block_hash: str) -> int:
-        """Get stash accounts free balances"""
-        account_info = SubstrateInterfaceUtils.get_account(self.service_params.substrate, stash, block_hash)
-        metrics_exporter.total_stashes_free_balance.inc(account_info.value['data']['free'])
-
-        return account_info.value['data']['free']
-
-    def _get_stake_status(self, stash: Keypair, block_hash: str = None) -> int:
-        """
-        Get stash account status.
-        0 - Idle, 1 - Nominator, 2 - Validator, 3 - None
-        """
-        if block_hash is None:
-            block_hash = self.service_params.substrate.get_chain_head()
-
-        staking_validators = SubstrateInterfaceUtils.get_validators(self.service_params.substrate, block_hash)
-        staking_nominators = SubstrateInterfaceUtils.get_nominators(self.service_params.substrate, block_hash)
-
-        nominators = set(nominator.value for nominator, _ in staking_nominators)
-        validators = set(validator for validator in staking_validators.value)
-
-        if stash.ss58_address in nominators:
-            return 1
-
-        if stash.ss58_address in validators:
-            return 2
-
-        return 0
-
     def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
         nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
 
         return self.service_params.w3.eth.contract(
-                address=self.service_params.contract_address,
-                abi=self.service_params.abi
+                    address=self.service_params.contract_address,
+                    abi=self.service_params.abi
                ).functions.reportRelay(
-                era_id,
-                staking_parameters,
+                    era_id,
+                    staking_parameters,
                ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': nonce})
 
     def _sign_and_send_to_para(self, tx: dict, stash: Keypair, era_id: int) -> bool:

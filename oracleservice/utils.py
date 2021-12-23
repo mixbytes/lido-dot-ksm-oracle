@@ -3,15 +3,14 @@ from substrateinterface import SubstrateInterface
 from web3 import Web3
 from web3.exceptions import ABIFunctionNotFound
 from websocket._exceptions import WebSocketAddressException
+from websockets.exceptions import InvalidStatusCode
 
 import json
 import logging
 import socket
 import sys
-import threading as th
 import time
 import urllib
-
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +23,8 @@ LOG_LEVELS = (
 )
 
 
-def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, timer: th.Timer = None):
-    """Handle signal, close substrate interface websocket connection, if it is open, stop timer thread and terminate the process"""
+def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None):
+    """Handle signal, close substrate interface websocket connection and terminate the process"""
     logger.debug(f"Receiving signal: {sig}")
     if substrate is not None:
         logger.debug("Closing substrate interface websocket connection")
@@ -39,14 +38,6 @@ def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, t
         else:
             logger.debug(f"Connection to relaychain node {substrate.url} is closed")
 
-    if timer is not None:
-        try:
-            if timer.is_alive():
-                timer.cancel()
-
-        except Exception as exc:
-            logger.warning(exc)
-
     sys.exit()
 
 
@@ -59,10 +50,6 @@ def create_provider(urls: list, timeout: int = 60, undesirable_urls: set = set()
         for url in urls:
             if url in undesirable_urls and not tried_all:
                 logger.info(f"Skipping undesirable url: {url}")
-                continue
-
-            if not url.startswith('ws'):
-                logger.warning(f"Unsupported ws provider: {url}")
                 continue
 
             try:
@@ -83,6 +70,56 @@ def create_provider(urls: list, timeout: int = 60, undesirable_urls: set = set()
             else:
                 logger.info(f"Successfully connected to {url}")
                 return w3
+
+        tried_all = True
+
+        logger.error("Failed to connect to any node")
+        logger.info(f"Timeout: {timeout} seconds")
+        time.sleep(timeout)
+
+
+def create_interface(
+        urls: list, ss58_format: int = 2,
+        type_registry_preset: str = 'kusama',
+        timeout: int = 60, undesirable_urls: set = set(),
+        substrate: SubstrateInterface = None,
+) -> SubstrateInterface:
+    """Create Substrate interface with the first node that comes along, if there is no undesirable one"""
+    recovering = False if substrate is None else True
+    tried_all = False
+
+    while True:
+        for url in urls:
+            if url in undesirable_urls and not tried_all:
+                logger.info(f"Skipping undesirable url: {url}")
+                continue
+
+            try:
+                if recovering:
+                    substrate.websocket.close()
+                    substrate.websocket.connect(url)
+                else:
+                    substrate = SubstrateInterface(
+                            url=url,
+                            ss58_format=ss58_format,
+                            type_registry_preset=type_registry_preset,
+                        )
+                    substrate.update_type_registry_presets()
+
+            except (
+                ConnectionRefusedError,
+                InvalidStatusCode,
+                ValueError,
+                WebSocketAddressException,
+            ) as exc:
+                logger.warning(f"Failed to connect to {url}: {exc}")
+                if isinstance(exc.args[0], str) and exc.args[0].find("Unsupported type registry preset") != -1:
+                    raise ValueError(exc.args[0])
+
+            else:
+                logger.info(f"The connection was made at the address: {url}")
+
+                return substrate
 
         tried_all = True
 
@@ -157,3 +194,16 @@ def check_abi_path(abi_path: str):
     """Check the path to the ABI"""
     if not exists(abi_path):
         raise FileNotFoundError(f"The file with the ABI was not found: {abi_path}")
+
+
+def get_parachain_address(_para_id: int) -> str:
+    """Get parachain address using parachain id with ss58 format provided"""
+    prefix = b'para'
+    para_addr = bytearray(prefix)
+    para_addr.append(_para_id & 0xFF)
+    _para_id = _para_id >> 8
+    para_addr.append(_para_id & 0xFF)
+    _para_id = _para_id >> 8
+    para_addr.append(_para_id & 0xFF)
+
+    return para_addr.ljust(32, b'\0').hex()

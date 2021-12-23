@@ -80,6 +80,7 @@ sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORAC
 * `PARA_ID` - Parachain ID. The default value is 999. 
 * `PROMETHEUS_METRICS_PORT` - Prometheus client port. The default port is 8000.
 * `LOG_LEVEL_STDOUT` - Logging level of the logging module: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. The default level is `INFO`.
+* `ORACLE_MODE` - If the value is `DEBUG`, the oracle will not send transactions, but only prepare a report.
 
 
 ## Prometheus metrics
