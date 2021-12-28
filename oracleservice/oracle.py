@@ -245,10 +245,7 @@ class Oracle:
             return
 
         with metrics_exporter.relay_exceptions_count.count_exceptions():
-            block_hash, block_number = self._find_start_block(era_id)
-            if block_hash is None:
-                logger.error("Can't find the required block")
-                raise BlockNotFound
+            block_hash, block_number = self._find_last_block(era_id)
             self._wait_until_finalizing(block_hash, block_number)
         metrics_exporter.previous_era_change_block_number.set(block_number)
 
@@ -292,52 +289,42 @@ class Oracle:
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
             self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
 
-    def _find_start_block(self, era_id: int) -> (str, int):
-        """Find the hash of the block at which the era change occurs"""
-        steps_in_blocks = [
-                int(self.service_params.era_duration_in_blocks * 0.1),
-                int(self.service_params.era_duration_in_blocks * 0.01),
-                int(self.service_params.era_duration_in_blocks * 0.001),
-            ]
-
+    def _find_last_block(self, era_id: int) -> (str, int):
+        """Find the last block of the previous era"""
         try:
             current_block_hash = self.service_params.substrate.get_chain_head()
-            current_block = self.service_params.substrate.get_block_header(current_block_hash)
-            init_block_number = current_block['header']['number']
+            current_block_number = self.service_params.substrate.get_block_number(current_block_hash)
+            start = 0
+            if current_block_number - self.service_params.era_duration_in_blocks > 0:
+                start = current_block_number - self.service_params.era_duration_in_blocks
 
-            for step in steps_in_blocks:
-                next_block_number = init_block_number - step
-
-                while True:
-                    current_block = self.service_params.substrate.get_block_header(block_number=next_block_number)
-                    current_block_era_id = self.service_params.substrate.query(
-                            module='Staking',
-                            storage_function='ActiveEra',
-                            block_hash=current_block['header']['hash'],
-                        ).value['index']
-
-                    if current_block_era_id != era_id:
-                        break
-
-                    init_block_number -= step
-                    next_block_number = init_block_number - step
-
-            for block_number in range(init_block_number, next_block_number - 1, -1):
-                current_block = self.service_params.substrate.get_block_header(block_number=block_number)
-                current_block_era_id = self.service_params.substrate.query(
+            end = current_block_number
+            while start <= end:
+                mid = (start + end) // 2
+                block_hash = self.service_params.substrate.get_block_hash(mid)
+                era = self.service_params.substrate.query(
                         module='Staking',
                         storage_function='ActiveEra',
-                        block_hash=current_block['header']['hash'],
-                    ).value['index']
+                        block_hash=block_hash,
+                    )
 
-                if current_block_era_id != era_id:
-                    break
+                if era.value['index'] < era_id:
+                    start = mid + 1
+                else:
+                    end = mid - 1
+
+            if era.value['index'] == era_id:
+                block_number = mid - 1
+                block_hash = self.service_params.substrate.get_block_hash(block_number)
+            else:
+                block_number = mid
 
         except SubstrateRequestException:
-            return None, None
+            logger.error("Can't find the required block")
+            raise BlockNotFound
 
-        logger.info(f"Block hash: {current_block['header']['hash']}. Block number: {current_block['header']['number']}")
-        return current_block['header']['hash'], current_block['header']['number']
+        logger.info(f"Block hash: {block_hash}. Block number: {block_number}")
+        return block_hash, block_number
 
     def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
