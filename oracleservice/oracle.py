@@ -245,10 +245,7 @@ class Oracle:
             return
 
         with metrics_exporter.relay_exceptions_count.count_exceptions():
-            block_hash, block_number = self._find_start_block(era_id)
-            if block_hash is None:
-                logger.error("Can't find the required block")
-                raise BlockNotFound
+            block_hash, block_number = self._find_last_block(era_id)
             self._wait_until_finalizing(block_hash, block_number)
         metrics_exporter.previous_era_change_block_number.set(block_number)
 
@@ -292,8 +289,8 @@ class Oracle:
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
             self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
 
-    def _find_start_block(self, era_id: int) -> (str, int):
-        """Find the hash of the block at which the era change occurs"""
+    def _find_last_block(self, era_id: int) -> (str, int):
+        """Find the last block of the previous era"""
         try:
             current_block_hash = self.service_params.substrate.get_chain_head()
             current_block_number = self.service_params.substrate.get_block_number(current_block_hash)
@@ -323,7 +320,8 @@ class Oracle:
                 block_number = mid
 
         except SubstrateRequestException:
-            return None, None
+            logger.error("Can't find the required block")
+            raise BlockNotFound
 
         logger.info(f"Block hash: {block_hash}. Block number: {block_number}")
         return block_hash, block_number
