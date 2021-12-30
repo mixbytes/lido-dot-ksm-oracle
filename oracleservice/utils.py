@@ -59,13 +59,11 @@ def create_provider(urls: list, timeout: int = 60, undesirable_urls: set = set()
                     raise ConnectionRefusedError
 
             except (
+                ConnectionRefusedError,
                 ValueError,
                 WebSocketAddressException,
             ) as exc:
                 logger.warning(f"Failed to connect to {url}: {exc}")
-
-            except ConnectionRefusedError:
-                logger.warning(f"Failed to connect to {url}: provider is not connected")
 
             else:
                 logger.info(f"Successfully connected to {url}")

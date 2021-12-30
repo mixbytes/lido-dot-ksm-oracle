@@ -8,6 +8,7 @@ from service_parameters import ServiceParameters
 from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from utils import create_interface, create_provider, get_abi, is_invalid_urls, stop_signal_handler, check_abi, check_abi_path, check_contract_address, check_log_level  # noqa: E501
+from web3 import Web3
 from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
 from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
@@ -92,7 +93,7 @@ def main():
 
         abi = get_abi(abi_path)
 
-        w3 = create_provider(ws_urls_para, timeout)
+        w3 = create_w3_provider_forcibly(ws_urls_para, timeout)
         substrate = create_interface(ws_urls_relay, ss58_format, type_registry_preset)
 
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
@@ -181,6 +182,34 @@ def main():
             else:
                 logger.error(f"Error: {exc}")
             oracle.start_recovery_mode()
+
+
+def create_w3_provider_forcibly(ws_urls_para: list, timeout: int) -> Web3:
+    """Force attempt to create a Web3 object"""
+    while True:
+        try:
+            w3 = create_provider(ws_urls_para, timeout)
+
+        except Exception as exc:
+            exc_type = type(exc)
+            if exc_type in [
+                asyncio.exceptions.TimeoutError,
+                BrokenPipeError,
+                ConnectionClosedError,
+                ConnectionResetError,
+                gaierror,
+                InvalidMessage,
+                InvalidStatusCode,
+                OSError,
+                TimeoutError,
+                WebSocketConnectionClosedException,
+            ]:
+                logger.warning(f"Error: {exc}")
+            else:
+                logger.error(f"Error: {exc}")
+
+        else:
+            return w3
 
 
 if __name__ == '__main__':
