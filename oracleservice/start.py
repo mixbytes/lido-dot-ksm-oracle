@@ -6,8 +6,10 @@ from pathlib import Path
 from prometheus_client import start_http_server
 from service_parameters import ServiceParameters
 from socket import gaierror
+from substrateinterface import SubstrateInterface
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from utils import create_interface, create_provider, get_abi, is_invalid_urls, stop_signal_handler, check_abi, check_abi_path, check_contract_address, check_log_level  # noqa: E501
+from web3 import Web3
 from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
 from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
@@ -31,6 +33,8 @@ DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
 DEFAULT_PROMETHEUS_METRICS_PORT = 8000
 DEFAULT_PARA_ID = 999
 DEFAULT_TIMEOUT = 60
+
+MAX_ATTEMPTS_TO_RECONNECT = 20
 
 
 def main():
@@ -92,8 +96,10 @@ def main():
 
         abi = get_abi(abi_path)
 
-        w3 = create_provider(ws_urls_para, timeout)
-        substrate = create_interface(ws_urls_relay, ss58_format, type_registry_preset)
+        logger.info("Creating a Web3 object")
+        w3 = create_provider_forcibly(ws_urls_para, timeout)
+        logger.info("Creating a SubstrateInterface object")
+        substrate = create_interface_forcibly(ws_urls_relay, ss58_format, type_registry_preset)
 
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
         if oracle_private_key is None:
@@ -181,6 +187,65 @@ def main():
             else:
                 logger.error(f"Error: {exc}")
             oracle.start_recovery_mode()
+
+
+def create_provider_forcibly(ws_urls_para: list, timeout: int) -> Web3:
+    """Force attempt to create a Web3 object"""
+    for _ in range(0, MAX_ATTEMPTS_TO_RECONNECT):
+        try:
+            w3 = create_provider(ws_urls_para, timeout)
+
+        except Exception as exc:
+            exc_type = type(exc)
+            if exc_type in [
+                asyncio.exceptions.TimeoutError,
+                BrokenPipeError,
+                ConnectionClosedError,
+                ConnectionResetError,
+                gaierror,
+                InvalidMessage,
+                InvalidStatusCode,
+                OSError,
+                TimeoutError,
+                WebSocketConnectionClosedException,
+            ]:
+                logger.warning(f"Error: {exc}")
+            else:
+                logger.error(f"Error: {exc}")
+
+        else:
+            return w3
+
+    sys.exit("Failed to create a Web3 object")
+
+
+def create_interface_forcibly(ws_urls_relay: list, ss58_format: int, type_registry_preset: str) -> SubstrateInterface:
+    """Force attempt to create a SubstrateInterface object"""
+    for _ in range(0, MAX_ATTEMPTS_TO_RECONNECT):
+        try:
+            substrate = create_interface(ws_urls_relay, ss58_format, type_registry_preset)
+
+        except Exception as exc:
+            exc_type = type(exc)
+            if exc_type in [
+                asyncio.exceptions.TimeoutError,
+                BrokenPipeError,
+                ConnectionClosedError,
+                ConnectionResetError,
+                gaierror,
+                InvalidMessage,
+                OSError,
+                TimeoutError,
+                WebSocketConnectionClosedException,
+            ]:
+                logger.warning(f"Error: {exc}")
+            else:
+                logger.error(f"Error: {exc}")
+
+        else:
+            return substrate
+
+    sys.exit("Failed to create a SubstrateInterface object")
 
 
 if __name__ == '__main__':

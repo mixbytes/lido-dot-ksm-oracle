@@ -8,7 +8,7 @@ from substrateinterface import Keypair
 from utils import create_interface, create_provider
 from web3.exceptions import BadFunctionCallOutput
 from web3 import Account
-from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
+from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
 
 import asyncio
@@ -113,19 +113,17 @@ class Oracle:
                     asyncio.exceptions.TimeoutError,
                     BrokenPipeError,
                     ConnectionClosedError,
-                    ConnectionRefusedError,
                     ConnectionResetError,
                     gaierror,
                     InvalidMessage,
-                    InvalidStatusCode,
                     OSError,
                     TimeoutError,
-                    WebSocketAddressException,
-                    WebSocketConnectionClosedException
+                    WebSocketConnectionClosedException,
                 ]:
                     logger.warning(f"Error: {exc}")
                 else:
                     logger.error(f"Error: {exc}")
+
                 if self.service_params.substrate.url in self.failure_reqs_count:
                     self.failure_reqs_count[self.service_params.substrate.url] += 1
                 else:
@@ -154,14 +152,12 @@ class Oracle:
                     BadFunctionCallOutput,
                     BrokenPipeError,
                     ConnectionClosedError,
-                    ConnectionRefusedError,
                     ConnectionResetError,
                     gaierror,
                     InvalidMessage,
                     InvalidStatusCode,
                     OSError,
                     TimeoutError,
-                    WebSocketAddressException,
                     WebSocketConnectionClosedException,
                 ]:
                     logger.warning(f"Error: {exc}")
