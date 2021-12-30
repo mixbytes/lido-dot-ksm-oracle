@@ -59,19 +59,21 @@ def create_provider(urls: list, timeout: int = 60, undesirable_urls: set = set()
                     raise ConnectionRefusedError
 
             except (
-                ConnectionRefusedError,
                 ValueError,
                 WebSocketAddressException,
             ) as exc:
-                logger.warning(f"Failed to connect to {url}: {exc}")
+                logger.warning(f"[web3py] Failed to connect to {url}: {exc}")
+
+            except ConnectionRefusedError:
+                logger.warning(f"[web3py] Failed to connect to {url}: provider is not connected")
 
             else:
-                logger.info(f"Successfully connected to {url}")
+                logger.info(f"[web3py] Successfully connected to {url}")
                 return w3
 
         tried_all = True
 
-        logger.error("Failed to connect to any node")
+        logger.error("[web3py] Failed to connect to any node")
         logger.info(f"Timeout: {timeout} seconds")
         time.sleep(timeout)
 
@@ -110,18 +112,18 @@ def create_interface(
                 ValueError,
                 WebSocketAddressException,
             ) as exc:
-                logger.warning(f"Failed to connect to {url}: {exc}")
+                logger.warning(f"[substrateinterface] Failed to connect to {url}: {exc}")
                 if isinstance(exc.args[0], str) and exc.args[0].find("Unsupported type registry preset") != -1:
                     raise ValueError(exc.args[0])
 
             else:
-                logger.info(f"The connection was made at the address: {url}")
+                logger.info(f"[substrateinterface] The connection was made at the address: {url}")
 
                 return substrate
 
         tried_all = True
 
-        logger.error("Failed to connect to any node")
+        logger.error("[substrateinterface] Failed to connect to any node")
         logger.info(f"Timeout: {timeout} seconds")
         time.sleep(timeout)
 
