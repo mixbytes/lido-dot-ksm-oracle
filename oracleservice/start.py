@@ -94,7 +94,9 @@ def main():
 
         abi = get_abi(abi_path)
 
+        logger.info("Creating a Web3 object")
         w3 = create_provider_forcibly(ws_urls_para, timeout)
+        logger.info("Creating a SubstrateInterface object")
         substrate = create_interface_forcibly(ws_urls_relay, ss58_format, type_registry_preset)
 
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
