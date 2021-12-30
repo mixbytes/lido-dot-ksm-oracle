@@ -6,6 +6,7 @@ from pathlib import Path
 from prometheus_client import start_http_server
 from service_parameters import ServiceParameters
 from socket import gaierror
+from substrateinterface import SubstrateInterface
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from utils import create_interface, create_provider, get_abi, is_invalid_urls, stop_signal_handler, check_abi, check_abi_path, check_contract_address, check_log_level  # noqa: E501
 from web3 import Web3
@@ -93,8 +94,8 @@ def main():
 
         abi = get_abi(abi_path)
 
-        w3 = create_w3_provider_forcibly(ws_urls_para, timeout)
-        substrate = create_interface(ws_urls_relay, ss58_format, type_registry_preset)
+        w3 = create_provider_forcibly(ws_urls_para, timeout)
+        substrate = create_interface_forcibly(ws_urls_relay, ss58_format, type_registry_preset)
 
         oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
         if oracle_private_key is None:
@@ -184,7 +185,7 @@ def main():
             oracle.start_recovery_mode()
 
 
-def create_w3_provider_forcibly(ws_urls_para: list, timeout: int) -> Web3:
+def create_provider_forcibly(ws_urls_para: list, timeout: int) -> Web3:
     """Force attempt to create a Web3 object"""
     while True:
         try:
@@ -210,6 +211,33 @@ def create_w3_provider_forcibly(ws_urls_para: list, timeout: int) -> Web3:
 
         else:
             return w3
+
+
+def create_interface_forcibly(ws_urls_relay: list, ss58_format: int, type_registry_preset: str) -> SubstrateInterface:
+    """Force attempt to create a SubstrateInterface object"""
+    while True:
+        try:
+            substrate = create_interface(ws_urls_relay, ss58_format, type_registry_preset)
+
+        except Exception as exc:
+            exc_type = type(exc)
+            if exc_type in [
+                asyncio.exceptions.TimeoutError,
+                BrokenPipeError,
+                ConnectionClosedError,
+                ConnectionResetError,
+                gaierror,
+                InvalidMessage,
+                OSError,
+                TimeoutError,
+                WebSocketConnectionClosedException,
+            ]:
+                logger.warning(f"Error: {exc}")
+            else:
+                logger.error(f"Error: {exc}")
+
+        else:
+            return substrate
 
 
 if __name__ == '__main__':
