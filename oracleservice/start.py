@@ -34,6 +34,8 @@ DEFAULT_PROMETHEUS_METRICS_PORT = 8000
 DEFAULT_PARA_ID = 999
 DEFAULT_TIMEOUT = 60
 
+MAX_ATTEMPTS_TO_RECONNECT = 20
+
 
 def main():
     try:
@@ -189,7 +191,7 @@ def main():
 
 def create_provider_forcibly(ws_urls_para: list, timeout: int) -> Web3:
     """Force attempt to create a Web3 object"""
-    while True:
+    for _ in range(0, MAX_ATTEMPTS_TO_RECONNECT):
         try:
             w3 = create_provider(ws_urls_para, timeout)
 
@@ -214,10 +216,12 @@ def create_provider_forcibly(ws_urls_para: list, timeout: int) -> Web3:
         else:
             return w3
 
+    sys.exit("Failed to create a Web3 object")
+
 
 def create_interface_forcibly(ws_urls_relay: list, ss58_format: int, type_registry_preset: str) -> SubstrateInterface:
     """Force attempt to create a SubstrateInterface object"""
-    while True:
+    for _ in range(0, MAX_ATTEMPTS_TO_RECONNECT):
         try:
             substrate = create_interface(ws_urls_relay, ss58_format, type_registry_preset)
 
@@ -240,6 +244,8 @@ def create_interface_forcibly(ws_urls_relay: list, ss58_format: int, type_regist
 
         else:
             return substrate
+
+    sys.exit("Failed to create a SubstrateInterface object")
 
 
 if __name__ == '__main__':
