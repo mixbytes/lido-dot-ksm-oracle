@@ -28,7 +28,7 @@ class Oracle:
     default_mode_started: bool = False
     failure_reqs_count: dict = field(default_factory=dict)
     last_era_reported: dict = field(default_factory=dict)
-    previous_era_id: int = -1
+    previous_active_era_id: int = -1
     undesirable_urls: set = field(default_factory=set)
     was_recovered: bool = False
 
@@ -57,14 +57,14 @@ class Oracle:
             self._restore_state()
 
         while True:
-            logger.debug(f"Getting active era. Previous era id: {self.previous_era_id}")
+            logger.debug(f"Getting active era. Previous active era id: {self.previous_active_era_id}")
             active_era = self.service_params.substrate.query(
                     module='Staking',
                     storage_function='ActiveEra',
                 )
 
             active_era_id = active_era.value['index']
-            if active_era_id > self.previous_era_id:
+            if active_era_id > self.previous_active_era_id:
                 self._handle_era_change(active_era_id, active_era.value['start'])
             elif self.was_recovered:
                 logger.info(f"Era {active_era_id - 1} has already been processed. Waiting for the next era")
@@ -219,13 +219,13 @@ class Oracle:
         if block_current != block_hash:
             raise BlockNotFound
 
-    def _handle_era_change(self, era_id: int, era_start_timestamp: int):
+    def _handle_era_change(self, active_era_id: int, era_start_timestamp: int):
         """
         Read the staking parameters for each stash account separately from the block where
         the era value is changed, generate the transaction body, sign and send to the parachain.
         """
-        logger.info(f"Active era index: {era_id}, start timestamp: {era_start_timestamp}")
-        metrics_exporter.active_era_id.set(era_id)
+        logger.info(f"Active era index: {active_era_id}, start timestamp: {era_start_timestamp}")
+        metrics_exporter.active_era_id.set(active_era_id)
         metrics_exporter.total_stashes_free_balance.set(0)
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
@@ -237,11 +237,11 @@ class Oracle:
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
         if not stash_accounts:
             logger.info("No stash accounts found: waiting for the next era")
-            self.previous_era_id = era_id
+            self.previous_active_era_id = active_era_id
             return
 
         with metrics_exporter.relay_exceptions_count.count_exceptions():
-            block_hash, block_number = self._find_last_block(era_id)
+            block_hash, block_number = self._find_last_block(active_era_id)
             self._wait_until_finalizing(block_hash, block_number)
         metrics_exporter.previous_era_change_block_number.set(block_number)
 
@@ -250,7 +250,7 @@ class Oracle:
 
             stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
 
-            if self.last_era_reported.get(stash.public_key, 0) >= era_id:
+            if self.last_era_reported.get(stash.public_key, 0) >= active_era_id - 1:
                 logger.info(f"The report has already been sent for stash {stash.ss58_address}")
                 continue
 
@@ -260,7 +260,7 @@ class Oracle:
             logger.info('; '.join([
                 "The parameters are read. Preparing the transaction body",
                 f"stash: {stash.ss58_address}",
-                f"era: {era_id}",
+                f"era: {active_era_id - 1}",
                 f"staking parameters: {staking_parameters}",
             ]))
             logger.debug('; '.join([
@@ -269,16 +269,16 @@ class Oracle:
             ]))
 
             with metrics_exporter.para_exceptions_count.count_exceptions():
-                tx = self._create_tx(era_id, staking_parameters)
+                tx = self._create_tx(active_era_id - 1, staking_parameters)
                 if not self.service_params.debug_mode:
-                    self._sign_and_send_to_para(tx, stash, era_id)
+                    self._sign_and_send_to_para(tx, stash, active_era_id - 1)
                 else:
                     logger.info(f"Skipping sending the transaction for stash {stash.ss58_address}: oracle is running in debug mode")
-            self.last_era_reported[stash.public_key] = era_id
+            self.last_era_reported[stash.public_key] = active_era_id - 1
 
         logger.info("Waiting for the next era")
-        metrics_exporter.last_era_reported.set(era_id - 1)
-        self.previous_era_id = era_id
+        metrics_exporter.last_era_reported.set(active_era_id - 1)
+        self.previous_active_era_id = active_era_id
 
         self.failure_reqs_count[self.service_params.substrate.url] = 0
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
@@ -345,6 +345,7 @@ class Oracle:
 
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
             logger.warning(f"Report for '{stash.ss58_address}' era {era_id} probably will fail with {msg}")
+            metrics_exporter.last_failed_era.set(era_id)
             return False
 
         tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.account.privateKey)
@@ -365,5 +366,6 @@ class Oracle:
             return True
         else:
             logger.warning(f"Transaction status for stash '{stash.ss58_address}' era {era_id} is reverted")
+            metrics_exporter.last_failed_era.set(era_id)
             metrics_exporter.tx_revert.observe(1)
             return False
