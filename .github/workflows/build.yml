@@ -15,9 +15,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      matrix:
-        environment: [moonbase]
 
     steps:
       -
@@ -45,8 +42,6 @@ jobs:
             type=ref,event=pr
             type=sha,prefix={{branch}}-,format=short,enable=${{ github.event_name == 'push' && !contains(github.ref, '/tags/') }}
             type=semver,pattern={{raw}}
-          flavor: |
-            suffix=-${{ matrix.environment }},onlatest=true
 
       -
         name: Build and push docker image
@@ -56,5 +51,3 @@ jobs:
           file: ./Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.docker_meta.outputs.tags }}
-          build-args: |
-            ENVIRONMENT=${{ matrix.environment }}
