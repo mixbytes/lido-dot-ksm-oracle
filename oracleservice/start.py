@@ -8,7 +8,6 @@ from service_parameters import ServiceParameters
 from socket import gaierror
 from substrateinterface import SubstrateInterface
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
-from utils import create_interface, create_provider, get_abi, is_invalid_urls, stop_signal_handler, check_abi, check_abi_path, check_contract_address, check_log_level  # noqa: E501
 from web3 import Web3
 from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
 from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
@@ -19,6 +18,7 @@ import logging
 import os
 import signal
 import sys
+import utils
 
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ MAX_ATTEMPTS_TO_RECONNECT = 20
 def main():
     try:
         log_level = os.getenv('LOG_LEVEL_STDOUT', 'INFO')
-        check_log_level(log_level)
+        utils.check_log_level(log_level)
         init_log(stdout_level=log_level)
 
         logger.info("Checking the configuration parameters")
@@ -50,10 +50,10 @@ def main():
         start_http_server(prometheus_metrics_port)
 
         ws_urls_relay = os.getenv('WS_URL_RELAY', 'ws://localhost:9951/').split(',')
-        assert not is_invalid_urls(ws_urls_relay), "Invalid urls were found in 'WS_URL_RELAY' parameter"
+        assert not utils.is_invalid_urls(ws_urls_relay), "Invalid urls were found in 'WS_URL_RELAY' parameter"
 
         ws_urls_para = os.getenv('WS_URL_PARA', 'ws://localhost:10055/').split(',')
-        assert not is_invalid_urls(ws_urls_para), "Invalid urls were found in 'WS_URL_PARA' parameter"
+        assert not utils.is_invalid_urls(ws_urls_para), "Invalid urls were found in 'WS_URL_PARA' parameter"
 
         ss58_format = int(os.getenv('SS58_FORMAT', 2))
         type_registry_preset = os.getenv('TYPE_REGISTRY_PRESET', 'kusama')
@@ -66,7 +66,7 @@ def main():
             sys.exit("No contract address provided")
 
         abi_path = os.getenv('ABI_PATH', DEFAULT_ABI_PATH)
-        check_abi_path(abi_path)
+        utils.check_abi_path(abi_path)
 
         gas_limit = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
         assert gas_limit > 0, "'GAS_LIMIT' parameter must be positive integer"
@@ -94,23 +94,24 @@ def main():
 
         debug_mode = True if os.getenv('ORACLE_MODE') == 'DEBUG' else False
 
-        abi = get_abi(abi_path)
+        abi = utils.get_abi(abi_path)
 
         logger.info("Creating a Web3 object")
         w3 = create_provider_forcibly(ws_urls_para, timeout)
         logger.info("Creating a SubstrateInterface object")
         substrate = create_interface_forcibly(ws_urls_relay, ss58_format, type_registry_preset)
 
-        oracle_private_key = os.getenv('ORACLE_PRIVATE_KEY')
+        oracle_private_key_path = os.getenv('ORACLE_PRIVATE_KEY_PATH')
+        oracle_private_key = utils.get_private_key(oracle_private_key_path, os.getenv('ORACLE_PRIVATE_KEY'))
         if oracle_private_key is None:
             sys.exit("Failed to parse oracle private key")
         # Check private key. Throws an exception if the length is not 32 bytes
         w3.eth.account.from_key(oracle_private_key)
 
-        check_contract_address(w3, contract_address)
+        utils.check_contract_address(w3, contract_address)
         oracle = w3.eth.account.from_key(oracle_private_key)
         logger.info("Checking ABI")
-        check_abi(w3, contract_address, abi, oracle.address)
+        utils.check_abi(w3, contract_address, abi, oracle.address)
 
         service_params = ServiceParameters(
                 abi=abi,
@@ -151,8 +152,8 @@ def main():
     except KeyboardInterrupt:
         sys.exit()
 
-    signal.signal(signal.SIGTERM, partial(stop_signal_handler, substrate=substrate))
-    signal.signal(signal.SIGINT, partial(stop_signal_handler, substrate=substrate))
+    signal.signal(signal.SIGTERM, partial(utils.stop_signal_handler, substrate=substrate))
+    signal.signal(signal.SIGINT, partial(utils.stop_signal_handler, substrate=substrate))
 
     while True:
         try:
@@ -193,7 +194,7 @@ def create_provider_forcibly(ws_urls_para: list, timeout: int) -> Web3:
     """Force attempt to create a Web3 object"""
     for _ in range(0, MAX_ATTEMPTS_TO_RECONNECT):
         try:
-            w3 = create_provider(ws_urls_para, timeout)
+            w3 = utils.create_provider(ws_urls_para, timeout)
 
         except Exception as exc:
             exc_type = type(exc)
@@ -223,7 +224,7 @@ def create_interface_forcibly(ws_urls_relay: list, ss58_format: int, type_regist
     """Force attempt to create a SubstrateInterface object"""
     for _ in range(0, MAX_ATTEMPTS_TO_RECONNECT):
         try:
-            substrate = create_interface(ws_urls_relay, ss58_format, type_registry_preset)
+            substrate = utils.create_interface(ws_urls_relay, ss58_format, type_registry_preset)
 
         except Exception as exc:
             exc_type = type(exc)

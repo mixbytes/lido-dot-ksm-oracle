@@ -28,7 +28,7 @@ By default, the `assets` directory contains oracle ABI and the service tries to 
 * Run the `brownie compile` command.
 * Copy the contents of the `build/contracts/OracleMaster.json` with the 'abi' key to `assets/oracle.json` or change the `ABI_PATH` environment variable (see below).
 
-To start the service, you need to do the following:
+To start the service, you need to do the following (instead of using the `ORACLE_PRIVATE_KEY` parameter, you can specify the path to the file, see below):
 ```shell
 export ORACLE_PRIVATE_KEY=$ORACLE_PRIVATE_KEY_0X_PREFIXED
 export WS_URL_RELAY=$RELAY_CHAIN_NODE_ADDRESS
@@ -42,7 +42,7 @@ To stop the service, send a SIGINT or SIGTERM signal to the process.
 
 ## Run as docker container
 * Choose one of the configs: `.env.moonbase`, `.env.devnet` or `.env.development`.
-* Edit the `ORACLE_PRIVATE_KEY` variable.
+* Set the variable `ORACLE_PRIVATE_KEY_PATH` or `ORACLE_PRIVATE_KEY`.
 * If you chose `.env.development`, edit the `CONTRACT_ADDRESS` variable. 
 * Check the other variables in config for relevance.
 
@@ -51,7 +51,7 @@ To build the container:
 sudo docker build -t lido-oracle .
 ```
 
-To start the service:
+To start the service (instead of using the `ORACLE_PRIVATE_KEY` parameter, you can specify the path to the file, see below):
 ```shell
 export ORACLE_PRIVATE_KEY=0x...
 export ENVIRONMENT=moonbase
@@ -66,7 +66,8 @@ sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORAC
 * `WS_URL_RELAY` - WS URL of relay chain node. **Required**.
 * `WS_URL_PARA` - WS URL of parachain node. **Required**.
 * `CONTRACT_ADDRESS` - OracleMaster contract address. **Required**. Example: `0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84`.
-* `ORACLE_PRIVATE_KEY` - Oracle private key, 0x prefixed. **Required**.
+* `ORACLE_PRIVATE_KEY_PATH` - The path to the oracle private key file. **Required**.
+* `ORACLE_PRIVATE_KEY` - Oracle private key, 0x prefixed. Used if there is no file with the key. **Required**.
 * `ABI_PATH` - Path to ABI file. The default value is `assets/oracle.json`.
 * `GAS_LIMIT` - The predefined gas limit for composed transaction. The default value is 10000000.
 * `FREQUENCY_OF_REQUESTS` - The frequency of sending requests to receive the active era in seconds. The default value is 180.
