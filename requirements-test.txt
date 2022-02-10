@@ -1,5 +1,5 @@
 flake8==3.9.2
 prometheus-client==0.11.0
 pytest==6.2.5
-substrate-interface==1.1.1
-web3==5.24.0
+substrate-interface==1.1.9
+web3==5.27.0
