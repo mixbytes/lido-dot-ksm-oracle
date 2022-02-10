@@ -149,6 +149,17 @@ def get_abi(abi_path: str) -> list:
         return json.load(f)
 
 
+def get_private_key(private_key_path: str, private_key: str) -> str:
+    """Get a private key from a file or from an environment variable"""
+    try:
+        with open(private_key_path, 'r') as f:
+            pk = f.readline().strip()
+            Web3().eth.account.from_key(pk)
+            return pk
+    except Exception:
+        return private_key
+
+
 def check_contract_address(w3: Web3, contract_addr: str):
     """Check whether the correct contract address is provided"""
     contract_code = w3.eth.get_code(contract_addr)
