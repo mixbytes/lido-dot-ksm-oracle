@@ -88,22 +88,23 @@ sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORAC
 
 Prometheus exporter is running on port 8000 by default and provides the following metrics.
 
-| name                                     | description                                                      | frequency                                 |
-| ---------------------------------------- | -----------------------------------------------------------------|-------------------------------------------|
-| **process_virtual_memory_bytes**  <br> *Gauge* | Virtual memory size in bytes | Every call |
-| **process_resident_memory_bytes** <br> *Gauge* | Resident memory size in bytes | Every call |
-| **process_start_time_seconds**    <br> *Gauge* | Start time of the process since unix epoch in seconds | Every call |
-| **process_cpu_seconds_total**     <br> *Counter* | Total user and system CPU time spent in seconds | Every call |
-| **process_open_fds**              <br> *Gauge* | Number of open file descriptors | Every call |
-| **process_max_fds**               <br> *Gauge* | Maximum number of open file descriptors | Every call |
-| **agent**            <br> *Info* | The address of the connected relay chain node | Each reconnection |
-| **is_recovery_mode_active**            <br> *Gauge* | Is oracle-service in recovery mode or not: 1, if the recovery mode, otherwise - the default mode | Starting and ending recovery mode |
-| **active_era_id**            <br> *Gauge* | Active era index | Every change of era |
-| **last_era_reported**            <br> *Gauge* | The last era that the Oracle has reported | After completing the sending of reports for the era |
-| **previous_era_change_block_number**            <br> *Gauge* | Block number of the previous era change | Every change of era, if at least one stash account was found |
-| **time_elapsed_until_last_era_report**            <br> *Gauge* | The time elapsed until the last report from the UNIX epoch in seconds | After each successful sending of a report |
-| **total_stashes_free_balance**            <br> *Gauge* | Total free balance of all stash accounts for the era | Every time a new report is generated |
-| **tx_revert**            <br> *Histogram* | Number of failed transactions | Every unsuccessful sending of a report |
-| **tx_success**            <br> *Histogram* | Number of successful transactions | Every successful sending of a report |
-| **para_exceptions_count**            <br> *Counter* | Parachain exceptions count | |
-| **relay_exceptions_count**            <br> *Counter* | Relay chain exceptions count |  |
+| name                                                           | description                                                                                      | frequency                                                    |
+|----------------------------------------------------------------|--------------------------------------------------------------------------------------------------|--------------------------------------------------------------|
+| **process_virtual_memory_bytes**  <br> *Gauge*                 | Virtual memory size in bytes                                                                     | Every call                                                   |
+| **process_resident_memory_bytes** <br> *Gauge*                 | Resident memory size in bytes                                                                    | Every call                                                   |
+| **process_start_time_seconds**    <br> *Gauge*                 | Start time of the process since unix epoch in seconds                                            | Every call                                                   |
+| **process_cpu_seconds_total**     <br> *Counter*               | Total user and system CPU time spent in seconds                                                  | Every call                                                   |
+| **process_open_fds**              <br> *Gauge*                 | Number of open file descriptors                                                                  | Every call                                                   |
+| **process_max_fds**               <br> *Gauge*                 | Maximum number of open file descriptors                                                          | Every call                                                   |
+| **agent**            <br> *Info*                               | The address of the connected relay chain node                                                    | Each reconnection                                            |
+| **is_recovery_mode_active**            <br> *Gauge*            | Is oracle-service in recovery mode or not: 1, if the recovery mode, otherwise - the default mode | Starting and ending recovery mode                            |
+| **active_era_id**            <br> *Gauge*                      | Active era index                                                                                 | Every change of era                                          |
+| **last_era_reported**            <br> *Gauge*                  | The last era that the Oracle has reported                                                        | After completing the sending of reports for the era          |
+| **previous_era_change_block_number**            <br> *Gauge*   | Block number of the previous era change                                                          | Every change of era, if at least one stash account was found |
+| **time_elapsed_until_last_era_report**            <br> *Gauge* | The time elapsed until the last report from the UNIX epoch in seconds                            | After each successful sending of a report                    |
+| **total_stashes_free_balance**            <br> *Gauge*         | Total free balance of all stash accounts for the era                                             | Every time a new report is generated                         |
+| **oracle_movr_balance**            <br> *Gauge*                | Oracle MOVR balance                                                                              | Every change of era                                          |
+| **tx_revert**            <br> *Histogram*                      | Number of failed transactions                                                                    | Every unsuccessful sending of a report                       |
+| **tx_success**            <br> *Histogram*                     | Number of successful transactions                                                                | Every successful sending of a report                         |
+| **para_exceptions_count**            <br> *Counter*            | Parachain exceptions count                                                                       |                                                              |
+| **relay_exceptions_count**            <br> *Counter*           | Relay chain exceptions count                                                                     |                                                              |

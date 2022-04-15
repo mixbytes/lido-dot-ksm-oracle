@@ -7,6 +7,7 @@ oracleservice/__pycache__
 
 *.swp
 
+.idea
 prompt.py
 *.cmd
 *.json
