@@ -274,6 +274,8 @@ class Oracle:
                     self._sign_and_send_to_para(tx, stash, active_era_id - 1)
                 else:
                     logger.info(f"Skipping sending the transaction for stash {stash.ss58_address}: oracle is running in debug mode")
+                balance = self.service_params.w3.eth.get_balance(self.account.address)
+                metrics_exporter.oracle_balance.labels(self.account.address).set(balance)
             self.last_era_reported[stash.public_key] = active_era_id - 1
 
         logger.info("Waiting for the next era")

@@ -24,6 +24,7 @@ class MetricsExporter:
         self.time_elapsed_until_last_report = Gauge('time_elapsed_until_last_report', "the time elapsed until the last report from the unix epoch in seconds", namespace=_prefix)  # noqa: E501
 
         self.total_stashes_free_balance = Gauge('total_stashes_free_balance', "total free balance of all stash accounts", namespace=_prefix)  # noqa: E501
+        self.oracle_balance = Gauge('oracle_balance', "oracle balance [wei]", ['address'], namespace=_prefix)
 
         self.tx_revert = Histogram('tx_revert', "reverted transactions", namespace=_prefix)
         self.tx_success = Histogram('tx_success', "successful transactions", namespace=_prefix)
