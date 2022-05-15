@@ -348,6 +348,7 @@ class Oracle:
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
             logger.warning(f"Report for '{stash.ss58_address}' era {era_id} probably will fail with {msg}")
             metrics_exporter.last_failed_era.set(era_id)
+            metrics_exporter.tx_revert.observe(1)
             return False
 
         tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.account.privateKey)
