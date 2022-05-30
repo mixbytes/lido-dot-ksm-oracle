@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from substrateinterface.base import SubstrateInterface
+from threading import Lock
 from web3.main import Web3
 
 
@@ -16,6 +17,7 @@ class ServiceParameters:
     debug_mode: bool = False
     frequency_of_requests: int = 300
     max_num_of_failure_reqs: int = 10
+    oracle_status_lock: Lock = None
     timeout: int = 60
 
     stash_accounts: list = field(default_factory=list)

@@ -1,9 +1,9 @@
+import logging
+
 from dataclasses import dataclass
 from prometheus_metrics import metrics_exporter
 from service_parameters import ServiceParameters
 from substrateinterface import Keypair
-
-import logging
 
 
 logger = logging.getLogger(__name__)
@@ -55,32 +55,32 @@ class ReportParametersReader:
     def _get_ledger_data(self, block_hash: str, stash: Keypair) -> dict:
         """Get ledger data using stash account address"""
         controller = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='Bonded',
-                params=[stash.ss58_address],
-                block_hash=block_hash,
-            )
+            module='Staking',
+            storage_function='Bonded',
+            params=[stash.ss58_address],
+            block_hash=block_hash,
+        )
         if controller.value is None:
             return None
 
         controller = Keypair(ss58_address=controller.value)
 
         ledger = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='Ledger',
-                params=[controller.ss58_address],
-                block_hash=block_hash,
-            )
+            module='Staking',
+            storage_function='Ledger',
+            params=[controller.ss58_address],
+            block_hash=block_hash,
+        )
 
         result = {'controller': controller, 'stash': stash}
         result.update(ledger.value)
 
         slashing_spans = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='SlashingSpans',
-                params=[controller.ss58_address],
-                block_hash=block_hash,
-            )
+            module='Staking',
+            storage_function='SlashingSpans',
+            params=[controller.ss58_address],
+            block_hash=block_hash,
+        )
         if slashing_spans.value is None:
             result['slashingSpans_number'] = 0
         else:
@@ -91,11 +91,11 @@ class ReportParametersReader:
     def _get_stash_free_balance(self, stash: Keypair, block_hash: str) -> int:
         """Get stash accounts free balances"""
         account_info = self.service_params.substrate.query(
-                module='System',
-                storage_function='Account',
-                params=[stash.ss58_address],
-                block_hash=block_hash,
-            )
+            module='System',
+            storage_function='Account',
+            params=[stash.ss58_address],
+            block_hash=block_hash,
+        )
         metrics_exporter.total_stashes_free_balance.inc(account_info.value['data']['free'])
 
         return account_info.value['data']['free']
@@ -109,16 +109,16 @@ class ReportParametersReader:
             block_hash = self.service_params.substrate.get_chain_head()
 
         staking_validators = self.service_params.substrate.query(
-                module='Session',
-                storage_function='Validators',
-                block_hash=block_hash,
-            )
+            module='Session',
+            storage_function='Validators',
+            block_hash=block_hash,
+        )
 
         staking_nominators = self.service_params.substrate.query_map(
-                module='Staking',
-                storage_function='Nominators',
-                block_hash=block_hash,
-            )
+            module='Staking',
+            storage_function='Nominators',
+            block_hash=block_hash,
+        )
 
         nominators = set(nominator.value for nominator, _ in staking_nominators)
         validators = set(validator for validator in staking_validators.value)

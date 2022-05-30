@@ -1,16 +1,18 @@
-from os.path import exists
-from substrateinterface import SubstrateInterface
-from web3 import Web3
-from web3.exceptions import ABIFunctionNotFound
-from websocket._exceptions import WebSocketAddressException
-from websockets.exceptions import InvalidStatusCode
-
 import json
 import logging
 import socket
 import sys
 import time
 import urllib
+
+from flask_caching import Cache
+from os.path import exists
+from server_thread import ServerThread
+from substrateinterface import SubstrateInterface
+from web3 import Web3
+from web3.exceptions import ABIFunctionNotFound
+from websocket._exceptions import WebSocketAddressException
+from websockets.exceptions import InvalidStatusCode
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +24,10 @@ LOG_LEVELS = (
     'CRITICAL',
 )
 
+cache = Cache()
 
-def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None):
+
+def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, rest_api_server: ServerThread = None):
     """Handle signal, close substrate interface websocket connection and terminate the process"""
     logger.debug(f"Receiving signal: {sig}")
     if substrate is not None:
@@ -37,6 +41,13 @@ def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None):
             logger.warning(exc)
         else:
             logger.debug(f"Connection to relaychain node {substrate.url} is closed")
+
+    if rest_api_server is not None:
+        logger.info("Shutting down the REST API server")
+        try:
+            rest_api_server.shutdown()
+        except Exception as exc:
+            logger.warning(exc)
 
     sys.exit()
 

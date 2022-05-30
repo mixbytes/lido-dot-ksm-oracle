@@ -1,7 +1,7 @@
+import os
+
 from dataclasses import dataclass, InitVar
 from prometheus_client import Counter, Gauge, Histogram, Info
-
-import os
 
 
 @dataclass

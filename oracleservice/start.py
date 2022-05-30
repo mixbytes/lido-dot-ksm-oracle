@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-from functools import partial
-from log import init_log
-from oracle import Oracle
-from pathlib import Path
-from prometheus_client import start_http_server
-from service_parameters import ServiceParameters
-from socket import gaierror
-from substrateinterface import SubstrateInterface
-from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
-from web3 import Web3
-from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
-from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
-from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
-
 import asyncio
 import logging
 import os
@@ -20,8 +6,35 @@ import signal
 import sys
 import utils
 
+from flask import Flask, jsonify
+from functools import partial
+from log import init_log
+from oracle import Oracle
+from pathlib import Path
+from prometheus_client import make_wsgi_app
+from server_thread import ServerThread
+from service_parameters import ServiceParameters
+from socket import gaierror
+from substrateinterface import SubstrateInterface
+from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
+from threading import Lock
+from web3 import Web3
+from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
+from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
+from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+
 
 logger = logging.getLogger(__name__)
+flask_app = Flask(__name__)
+flask_app.wsgi_app = DispatcherMiddleware(flask_app.wsgi_app, {
+    '/metrics': make_wsgi_app(),
+})
+
+DEFAULT_LOG_LEVEL_STDOUT = 'INFO'
+DEFAULT_REST_API_SERVER_IP_ADDRESS = '0.0.0.0'
+DEFAULT_REST_API_SERVER_PORT = 8000
+DEFAULT_TIMEOUT = 60
 
 DEFAULT_ABI_PATH = Path(__file__).parent.parent.as_posix() + '/assets/oracle.json'
 DEFAULT_ERA_DURATION_IN_BLOCKS = 30
@@ -30,24 +43,28 @@ DEFAULT_FREQUENCY_OF_REQUESTS = 180
 DEFAULT_GAS_LIMIT = 10000000
 DEFAULT_INITIAL_BLOCK_NUMBER = 1
 DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
-DEFAULT_PROMETHEUS_METRICS_PORT = 8000
 DEFAULT_PARA_ID = 999
-DEFAULT_TIMEOUT = 60
 
 MAX_ATTEMPTS_TO_RECONNECT = 20
+
+utils.cache.init_app(app=flask_app, config={'CACHE_TYPE': 'SimpleCache'})
+utils.cache.set('oracle_status', 'not working')
+oracle_status_lock = Lock()
 
 
 def main():
     try:
-        log_level = os.getenv('LOG_LEVEL_STDOUT', 'INFO')
+        log_level = os.getenv('LOG_LEVEL_STDOUT', DEFAULT_LOG_LEVEL_STDOUT)
         utils.check_log_level(log_level)
         init_log(stdout_level=log_level)
 
         logger.info("Checking the configuration parameters")
 
-        prometheus_metrics_port = int(os.getenv('PROMETHEUS_METRICS_PORT', DEFAULT_PROMETHEUS_METRICS_PORT))
-        logger.info(f"Starting the prometheus server on port {prometheus_metrics_port}")
-        start_http_server(prometheus_metrics_port)
+        rest_api_server_ip_address = os.getenv('REST_API_SERVER_IP_ADDRESS', DEFAULT_REST_API_SERVER_IP_ADDRESS)
+        rest_api_server_port = int(os.getenv('REST_API_SERVER_PORT', DEFAULT_REST_API_SERVER_PORT))
+        rest_api_server = ServerThread(flask_app, rest_api_server_port, rest_api_server_ip_address)
+        logger.info(f"Starting the REST API server on port {rest_api_server_port}")
+        rest_api_server.start()
 
         ws_urls_relay = os.getenv('WS_URL_RELAY', 'ws://localhost:9951/').split(',')
         assert not utils.is_invalid_urls(ws_urls_relay), "Invalid urls were found in 'WS_URL_RELAY' parameter"
@@ -72,9 +89,9 @@ def main():
         assert gas_limit > 0, "'GAS_LIMIT' parameter must be positive integer"
 
         max_number_of_failure_requests = int(os.getenv(
-                'MAX_NUMBER_OF_FAILURE_REQUESTS',
-                DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS,
-            ))
+            'MAX_NUMBER_OF_FAILURE_REQUESTS',
+            DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS,
+        ))
         assert max_number_of_failure_requests > 0, "'MAX_NUMBER_OF_FAILURE_REQUESTS' parameter must be positive integer"
 
         timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
@@ -114,24 +131,25 @@ def main():
         utils.check_abi(w3, contract_address, abi, oracle.address)
 
         service_params = ServiceParameters(
-                abi=abi,
-                contract_address=contract_address,
-                debug_mode=debug_mode,
-                era_duration_in_blocks=era_duration_in_blocks,
-                era_duration_in_seconds=era_duration_in_seconds,
-                frequency_of_requests=frequency_of_requests,
-                gas_limit=gas_limit,
-                initial_block_number=initial_block_number,
-                max_num_of_failure_reqs=max_number_of_failure_requests,
-                para_id=para_id,
-                ss58_format=ss58_format,
-                substrate=substrate,
-                timeout=timeout,
-                type_registry_preset=type_registry_preset,
-                ws_urls_relay=ws_urls_relay,
-                ws_urls_para=ws_urls_para,
-                w3=w3,
-            )
+            abi=abi,
+            contract_address=contract_address,
+            debug_mode=debug_mode,
+            era_duration_in_blocks=era_duration_in_blocks,
+            era_duration_in_seconds=era_duration_in_seconds,
+            frequency_of_requests=frequency_of_requests,
+            gas_limit=gas_limit,
+            initial_block_number=initial_block_number,
+            max_num_of_failure_reqs=max_number_of_failure_requests,
+            oracle_status_lock=oracle_status_lock,
+            para_id=para_id,
+            ss58_format=ss58_format,
+            substrate=substrate,
+            timeout=timeout,
+            type_registry_preset=type_registry_preset,
+            ws_urls_relay=ws_urls_relay,
+            ws_urls_para=ws_urls_para,
+            w3=w3,
+        )
 
         oracle = Oracle(account=oracle, service_params=service_params)
         logger.info("Finished checking the configuration parameters")
@@ -152,8 +170,8 @@ def main():
     except KeyboardInterrupt:
         sys.exit()
 
-    signal.signal(signal.SIGTERM, partial(utils.stop_signal_handler, substrate=substrate))
-    signal.signal(signal.SIGINT, partial(utils.stop_signal_handler, substrate=substrate))
+    signal.signal(signal.SIGTERM, partial(utils.stop_signal_handler, substrate=substrate, rest_api_server=rest_api_server))
+    signal.signal(signal.SIGINT, partial(utils.stop_signal_handler, substrate=substrate, rest_api_server=rest_api_server))
 
     while True:
         try:
@@ -188,6 +206,18 @@ def main():
             else:
                 logger.error(f"Error: {exc}")
             oracle.start_recovery_mode()
+
+
+@flask_app.route('/healthcheck', methods=['GET'])
+def healthcheck():
+    with oracle_status_lock:
+        oracle_status = utils.cache.get('oracle_status')
+
+    body = {'oracle_status': oracle_status}
+    response = jsonify(body)
+    response.status = 200
+
+    return response
 
 
 def create_provider_forcibly(ws_urls_para: list, timeout: int) -> Web3:

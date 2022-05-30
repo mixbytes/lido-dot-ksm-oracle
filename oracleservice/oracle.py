@@ -1,3 +1,7 @@
+import asyncio
+import logging
+import time
+
 from dataclasses import dataclass, field
 from prometheus_metrics import metrics_exporter
 from report_parameters_reader import ReportParametersReader
@@ -5,15 +9,11 @@ from service_parameters import ServiceParameters
 from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface import Keypair
-from utils import create_interface, create_provider
+from utils import cache, create_interface, create_provider
 from web3.exceptions import BadFunctionCallOutput
 from web3 import Account
 from websocket._exceptions import WebSocketConnectionClosedException
 from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
-
-import asyncio
-import logging
-import time
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,9 @@ class Oracle:
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
+        with self.service_params.oracle_status_lock:
+            cache.set('oracle_status', 'starting')
+
         if not self.default_mode_started:
             self.default_mode_started = True
         else:
@@ -58,10 +61,12 @@ class Oracle:
 
         while True:
             logger.debug(f"Getting active era. Previous active era id: {self.previous_active_era_id}")
+            with self.service_params.oracle_status_lock:
+                cache.set('oracle_status', 'working')
             active_era = self.service_params.substrate.query(
-                    module='Staking',
-                    storage_function='ActiveEra',
-                )
+                module='Staking',
+                storage_function='ActiveEra',
+            )
 
             active_era_id = active_era.value['index']
             if active_era_id > self.previous_active_era_id:
@@ -76,6 +81,8 @@ class Oracle:
     def start_recovery_mode(self):
         """Start of the Oracle recovery mode."""
         logger.info("Starting recovery mode")
+        with self.service_params.oracle_status_lock:
+            cache.set('oracle_status', 'recovering')
         metrics_exporter.is_recovery_mode_active.set(True)
         self.default_mode_started = False
 
@@ -97,13 +104,13 @@ class Oracle:
                     self.undesirable_urls.add(self.service_params.substrate.url)
                     self.service_params.substrate.websocket.shutdown()
                     self.service_params.substrate = create_interface(
-                            urls=self.service_params.ws_urls_relay,
-                            ss58_format=self.service_params.ss58_format,
-                            type_registry_preset=self.service_params.type_registry_preset,
-                            timeout=self.service_params.timeout,
-                            undesirable_urls=self.undesirable_urls,
-                            substrate=self.service_params.substrate,
-                        )
+                        urls=self.service_params.ws_urls_relay,
+                        ss58_format=self.service_params.ss58_format,
+                        type_registry_preset=self.service_params.type_registry_preset,
+                        timeout=self.service_params.timeout,
+                        undesirable_urls=self.undesirable_urls,
+                        substrate=self.service_params.substrate,
+                    )
                 metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
                 break
 
@@ -178,14 +185,14 @@ class Oracle:
     def _restore_state(self):
         """Restore the state after starting the default mode"""
         stash_accounts = self.service_params.w3.eth.contract(
-                address=self.service_params.contract_address,
-                abi=self.service_params.abi,
-            ).functions.getStashAccounts().call()
+            address=self.service_params.contract_address,
+            abi=self.service_params.abi,
+        ).functions.getStashAccounts().call()
         for stash_acc in stash_accounts:
             (era_id, is_reported) = self.service_params.w3.eth.contract(
-                    address=self.service_params.contract_address,
-                    abi=self.service_params.abi
-                ).functions.isReportedLastEra(self.account.address, stash_acc).call()
+                address=self.service_params.contract_address,
+                abi=self.service_params.abi
+            ).functions.isReportedLastEra(self.account.address, stash_acc).call()
 
             stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
             self.last_era_reported[stash.public_key] = era_id if is_reported else era_id - 1
@@ -231,9 +238,9 @@ class Oracle:
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         with metrics_exporter.para_exceptions_count.count_exceptions():
             stash_accounts = self.service_params.w3.eth.contract(
-                    address=self.service_params.contract_address,
-                    abi=self.service_params.abi,
-                ).functions.getStashAccounts().call()
+                address=self.service_params.contract_address,
+                abi=self.service_params.abi,
+            ).functions.getStashAccounts().call()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
         if not stash_accounts:
             logger.info("No stash accounts found: waiting for the next era")
@@ -301,10 +308,10 @@ class Oracle:
                 mid = (start + end) // 2
                 block_hash = self.service_params.substrate.get_block_hash(mid)
                 era = self.service_params.substrate.query(
-                        module='Staking',
-                        storage_function='ActiveEra',
-                        block_hash=block_hash,
-                    )
+                    module='Staking',
+                    storage_function='ActiveEra',
+                    block_hash=block_hash,
+                )
 
                 if era.value['index'] < era_id:
                     start = mid + 1
@@ -329,12 +336,12 @@ class Oracle:
         nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
 
         return self.service_params.w3.eth.contract(
-                    address=self.service_params.contract_address,
-                    abi=self.service_params.abi
-               ).functions.reportRelay(
-                    era_id,
-                    staking_parameters,
-               ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': nonce})
+            address=self.service_params.contract_address,
+            abi=self.service_params.abi
+        ).functions.reportRelay(
+            era_id,
+            staking_parameters,
+        ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': nonce})
 
     def _sign_and_send_to_para(self, tx: dict, stash: Keypair, era_id: int) -> bool:
         """Sign transaction and send to parachain"""
