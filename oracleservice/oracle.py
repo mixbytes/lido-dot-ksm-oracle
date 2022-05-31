@@ -65,7 +65,7 @@ class Oracle:
         while True:
             logger.debug(f"Getting active era. Previous active era id: {self.previous_active_era_id}")
             with self.service_params.oracle_status_lock:
-                cache.set('oracle_status', 'working')
+                cache.set('oracle_status', 'monitoring')
             active_era = self.service_params.substrate.query(
                 module='Staking',
                 storage_function='ActiveEra',
@@ -78,6 +78,8 @@ class Oracle:
                 logger.info(f"Era {active_era_id - 1} has already been processed. Waiting for the next era")
                 self.was_recovered = False
 
+            with self.service_params.oracle_status_lock:
+                cache.set('oracle_status', 'monitoring')
             logger.debug(f"Sleep for {self.service_params.frequency_of_requests} seconds until the next request")
             time.sleep(self.service_params.frequency_of_requests)
 
@@ -234,6 +236,9 @@ class Oracle:
         Read the staking parameters for each stash account separately from the block where
         the era value is changed, generate the transaction body, sign and send to the parachain.
         """
+        with self.service_params.oracle_status_lock:
+            cache.set('oracle_status', 'processing')
+
         logger.info(f"Active era index: {active_era_id}, start timestamp: {era_start_timestamp}")
         metrics_exporter.active_era_id.set(active_era_id)
         metrics_exporter.total_stashes_free_balance.set(0)

@@ -117,5 +117,6 @@ Prometheus metrics are provided by URL '/metrics'.
 Oracle status is provided by URL '/healthcheck'. The following states are possible:
 * not working - the service is in parameter preparation mode;
 * starting - the service is starting but has not yet started monitoring the event;
-* working - the service is monitoring the event or preparing data for a report or sending a transaction;
+* monitoring - the service is monitoring the event;
+* processing - the service is preparing data for a report or sending a transaction;
 * recovering - the service is in recovery mode.
