@@ -57,7 +57,7 @@ export ORACLE_PRIVATE_KEY=0x...
 export ENVIRONMENT=moonbase
 export ORACLE_NUMBER=1
 source .env.$ENVIRONMENT
-sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORACLE_NUMBER} -p $PROMETHEUS_METRICS_PORT:8001 -d lido-oracle 
+sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORACLE_NUMBER} -p $REST_API_SERVER_PORT:8001 -d lido-oracle
 ```
 
 
@@ -87,7 +87,7 @@ sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORAC
 
 ## Prometheus metrics
 
-Prometheus exporter is running on port 8000 by default and provides the following metrics.
+Prometheus exporter provides the following metrics.
 
 | name                                                               | description                                                                                      | frequency                                                    |
 |--------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|--------------------------------------------------------------|
