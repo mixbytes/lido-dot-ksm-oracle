@@ -59,6 +59,9 @@ class Oracle:
         with metrics_exporter.para_exceptions_count.count_exceptions():
             self._restore_state()
 
+        balance = self.service_params.w3.eth.get_balance(self.account.address)
+        metrics_exporter.oracle_balance.labels(self.account.address).set(balance)
+
         while True:
             logger.debug(f"Getting active era. Previous active era id: {self.previous_active_era_id}")
             with self.service_params.oracle_status_lock:
