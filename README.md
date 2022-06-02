@@ -57,7 +57,7 @@ export ORACLE_PRIVATE_KEY=0x...
 export ENVIRONMENT=moonbase
 export ORACLE_NUMBER=1
 source .env.$ENVIRONMENT
-sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORACLE_NUMBER} -p $PROMETHEUS_METRICS_PORT:8001 -d lido-oracle 
+sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORACLE_NUMBER} -p $REST_API_SERVER_PORT:8001 -d lido-oracle
 ```
 
 
@@ -78,15 +78,16 @@ sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORAC
 * `INITIAL_BLOCK_NUMBER` - The sequence number of the block, from which the countdown is done according to the formula: "`era_id` * `ERA_DURATION_IN_SECONDS` + `INITIAL_BLOCK_NUMBER`". The default value is 1. **Required**.
 * `SS58_FORMAT` - The default value is 2. **Required**.
 * `TYPE_REGISTRY_PRESET` - The default value is 'kusama'. **Required**.
-* `PARA_ID` - Parachain ID. The default value is 999. 
-* `PROMETHEUS_METRICS_PORT` - Prometheus client port. The default port is 8000.
+* `PARA_ID` - Parachain ID. The default value is 999.
+* `REST_API_SERVER_IP_ADDRESS` - REST API server IP address. The default value is "0.0.0.0".
+* `REST_API_SERVER_PORT` - REST API server port. The default value is 8000.
 * `LOG_LEVEL_STDOUT` - Logging level of the logging module: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. The default level is `INFO`.
 * `ORACLE_MODE` - If the value is `DEBUG`, the oracle will not send transactions, but only prepare a report.
 
 
 ## Prometheus metrics
 
-Prometheus exporter is running on port 8000 by default and provides the following metrics.
+Prometheus exporter provides the following metrics.
 
 | name                                                               | description                                                                                      | frequency                                                    |
 |--------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|--------------------------------------------------------------|
@@ -108,3 +109,14 @@ Prometheus exporter is running on port 8000 by default and provides the followin
 | **tx_success**                                    <br> *Histogram* | Number of successful transactions                                                                | Every successful sending of a report                         |
 | **para_exceptions_count**                         <br> *Counter*   | Parachain exceptions count                                                                       |                                                              |
 | **relay_exceptions_count**                        <br> *Counter*   | Relay chain exceptions count                                                                     |                                                              |
+
+
+## REST API
+Prometheus metrics are provided by URL '/metrics'.
+
+Oracle status is provided by URL '/healthcheck'. The following states are possible:
+* not working - the service is in parameter preparation mode;
+* starting - the service is starting but has not yet started monitoring the event;
+* monitoring - the service is monitoring the event;
+* processing - the service is preparing data for a report or sending a transaction;
+* recovering - the service is in recovery mode.
