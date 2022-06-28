@@ -1,0 +1,175 @@
+name: Build and deploy our master application
+
+on:
+  push:
+    tags: 
+      - 'v*.*.*'
+
+env: 
+  DEPLOYMENT_MANIFEST_PATH: './manifests'
+  APP: oracle1-dpl
+  APP_2: oracle2-dpl
+  NAMESPACE1: prod-ksm-oracle1-ns
+  NAMESPACE2: prod-dot-oracle1-ns
+  NAMESPACE3: prod-testnet-oracle1-ns
+  NAMESPACE2_1: prod-ksm-oracle2-ns
+  NAMESPACE2_2: prod-dot-oracle2-ns
+  NAMESPACE2_3: prod-testnet-oracle2-ns
+  TYPE_ENV: master
+  NETWORK1: kusama
+  NETWORK2: polkadot
+  NETWORK3: testnet
+  DOCKER_IMAGE_NAME: mixbytes/lido-dot-ksm-oracle
+
+jobs:
+  build-master:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Send telegram message on push commit
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: |
+            ${{ github.actor }} created commit:
+            Commit message: ${{ github.event.commits[0].message }}
+            
+            Repository: ${{ github.repository }}
+            
+            See changes: https://github.com/${{ github.repository }}/commit/${{github.sha}}
+
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      -
+        name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set TAG id
+        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Test TAG view
+        run: |
+          echo $RELEASE_VERSION
+          echo ${{ env.RELEASE_VERSION }}
+
+      - name: Build the Docker image
+        run: docker build . --file Dockerfile --tag $DOCKER_IMAGE_NAME:${{ env.RELEASE_VERSION }}
+
+      - name: Docker Push
+        run: docker push $DOCKER_IMAGE_NAME:${{ env.RELEASE_VERSION }}
+
+      - name: Send telegram message on push image
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: |
+            ✅ Automation message: IMAGE > ${{ env.DOCKER_IMAGE_NAME }}:${{ env.RELEASE_VERSION }} > Build and Push to Dockerhub Successfully!
+
+  deploy-master:
+    needs: build-master 
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Get config kubernetes
+        uses: actions-hub/kubectl@master
+        env:
+          KUBE_CONFIG: ${{ secrets.PROD_KUBE_CONFIG_DATA }}
+
+      - name: Set TAG id
+        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Test TAG view
+        run: |
+          echo $RELEASE_VERSION
+          echo ${{ env.RELEASE_VERSION }}
+
+      # - name: Apply TAG to deployment file
+      #   run: sed "s/TAGIMAGE/${{ env.RELEASE_VERSION }}/g" ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK1 }}/deployment.yaml > changed.txt && mv changed.txt ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK1 }}/deployment.yaml
+
+      # - name: Deployment apply to kubernetes
+      #   uses: actions-hub/kubectl@master
+      #   with:
+      #     args: apply -f ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK1 }}/deployment.yaml --namespace=${{ env.NAMESPACE1 }}
+
+      # - name: Deployment rollout restart to kubernetes
+      #   uses: actions-hub/kubectl@master
+      #   with:
+      #     args: rollout restart deployment ${{ env.APP }} --namespace=${{ env.NAMESPACE1 }}
+
+      # - name: Send telegram message on deploy to MASTER Kubernetes
+      #   uses: appleboy/telegram-action@master
+      #   with:
+      #     to: ${{ secrets.TELEGRAM_TO }}
+      #     token: ${{ secrets.TELEGRAM_TOKEN }}
+      #     message: |
+      #       ✅ Automation message: IMAGE > ${{ env.DOCKER_IMAGE_NAME }}:${{ env.RELEASE_VERSION }} > Deploy to MASTER Kubernetes ${{ env.NETWORK1 }} Successfully!
+
+      # - name: Apply TAG to deployment file
+      #   run: sed "s/TAGIMAGE/${{ env.RELEASE_VERSION }}/g" ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK2 }}/deployment.yaml > changed.txt && mv changed.txt ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK2 }}/deployment.yaml
+
+      # - name: Deployment apply to kubernetes
+      #   uses: actions-hub/kubectl@master
+      #   with:
+      #     args: apply -f ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK2 }}/deployment.yaml --namespace=${{ env.NAMESPACE2 }}
+
+      # - name: Deployment rollout restart to kubernetes
+      #   uses: actions-hub/kubectl@master
+      #   with:
+      #     args: rollout restart deployment ${{ env.APP }} --namespace=${{ env.NAMESPACE2 }}
+
+      # - name: Send telegram message on deploy to MASTER Kubernetes
+      #   uses: appleboy/telegram-action@master
+      #   with:
+      #     to: ${{ secrets.TELEGRAM_TO }}
+      #     token: ${{ secrets.TELEGRAM_TOKEN }}
+      #     message: |
+      #       ✅ Automation message: IMAGE > ${{ env.DOCKER_IMAGE_NAME }}:${{ env.RELEASE_VERSION }} > Deploy to MASTER Kubernetes ${{ env.NETWORK2 }} Successfully!
+
+      - name: Apply TAG to deployment file
+        run: sed "s/TAGIMAGE/${{ env.RELEASE_VERSION }}/g" ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK3 }}/deployment1.yaml > changed.txt && mv changed.txt ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK3 }}/deployment1.yaml
+
+      - name: Deployment apply to kubernetes
+        uses: actions-hub/kubectl@master
+        with:
+          args: apply -f ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK3 }}/deployment1.yaml --namespace=${{ env.NAMESPACE3 }}
+
+      - name: Deployment rollout restart to kubernetes
+        uses: actions-hub/kubectl@master
+        with:
+          args: rollout restart deployment ${{ env.APP }} --namespace=${{ env.NAMESPACE3 }}
+
+      - name: Send telegram message on deploy to MASTER Kubernetes
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: |
+            ✅ Automation message: IMAGE > ${{ env.DOCKER_IMAGE_NAME }}:${{ env.RELEASE_VERSION }} > Deploy to MASTER Kubernetes Oracle1 ${{ env.NETWORK3 }} Successfully!
+
+      - name: Apply TAG to deployment file
+        run: sed "s/TAGIMAGE/${{ env.RELEASE_VERSION }}/g" ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK3 }}/deployment2.yaml > changed.txt && mv changed.txt ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK3 }}/deployment2.yaml
+
+      - name: Deployment apply to kubernetes
+        uses: actions-hub/kubectl@master
+        with:
+          args: apply -f ${{ env.DEPLOYMENT_MANIFEST_PATH }}/${{ env.TYPE_ENV }}/${{ env.NETWORK3 }}/deployment2.yaml --namespace=${{ env.NAMESPACE2_3 }}
+
+      - name: Deployment rollout restart to kubernetes
+        uses: actions-hub/kubectl@master
+        with:
+          args: rollout restart deployment ${{ env.APP_2 }} --namespace=${{ env.NAMESPACE2_3 }}
+
+      - name: Send telegram message on deploy to MASTER Kubernetes
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: |
+            ✅ Automation message: IMAGE > ${{ env.DOCKER_IMAGE_NAME }}:${{ env.RELEASE_VERSION }} > Deploy to MASTER Kubernetes Oracle2 ${{ env.NETWORK3 }} Successfully!

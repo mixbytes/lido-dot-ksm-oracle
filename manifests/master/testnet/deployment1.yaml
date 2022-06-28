@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oracle1-dpl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oracle1
+  template:
+    metadata:
+      labels:
+        app: oracle1
+    spec:
+      containers:
+      - name: oracle1
+        image: mixbytes/lido-dot-ksm-oracle:TAGIMAGE
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 8001
+        env:
+          - name: CONTRACT_ADDRESS
+            value: "0x8acdf52eB1c78c0e641Ea37dcA3b8F4010E235f2"
+          - name: LOG_LEVEL_STDOUT
+            value: "INFO"
+          - name: PROMETHEUS_METRICS_PORT
+            value: "8001"
+          - name: PROMETHEUS_METRICS_PREFIX
+            value: "oracle"
+          - name: TIMEOUT
+            value: "30"
+          - name: ERA_DURATION_IN_BLOCKS
+            value: "3600"
+          - name: ERA_DURATION_IN_SECONDS
+            value: "21600"
+          - name: INITIAL_BLOCK_NUMBER
+            value: "1"
+          - name: SS58_FORMAT
+            value: "42"
+          - name: TYPE_REGISTRY_PRESET
+            value: "kusama"
+          - name: FREQUENCY_OF_REQUESTS
+            value: "300"
+          - name: MAX_NUMBER_OF_FAILURE_REQUESTS
+            value: "10"
+          - name: ORACLE_PRIVATE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: secret-oracle1
+                key: ORACLE_PRIVATE_KEY
+                optional: false
+          - name: WS_URL_RELAY
+            valueFrom:
+              secretKeyRef:
+                name: secret-oracle1
+                key: WS_URL_RELAY
+                optional: false
+          - name: WS_URL_PARA
+            valueFrom:
+              secretKeyRef:
+                name: secret-oracle1
+                key: WS_URL_PARA
+                optional: false
