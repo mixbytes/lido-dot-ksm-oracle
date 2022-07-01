@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oracle2-dpl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oracle2
+  template:
+    metadata:
+      labels:
+        app: oracle2
+    spec:
+      containers:
+      - name: oracle2
+        image: mixbytes/lido-dot-ksm-oracle:TAGIMAGE
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 8001
+        env:
+          - name: CONTRACT_ADDRESS
+            value: "0x29767b69c2c39b22667dfD960e95911AC6e0CCEd"
+          - name: LOG_LEVEL_STDOUT
+            value: "INFO"
+          - name: REST_API_SERVER_PORT
+            value: "8001"
+          - name: PROMETHEUS_METRICS_PREFIX
+            value: "oracle"
+          - name: TIMEOUT
+            value: "30"
+          - name: ERA_DURATION_IN_BLOCKS
+            value: "14400"
+          - name: ERA_DURATION_IN_SECONDS
+            value: "81400"
+          - name: INITIAL_BLOCK_NUMBER
+            value: "1"
+          - name: SS58_FORMAT
+            value: "42"
+          - name: TYPE_REGISTRY_PRESET
+            value: "polkadot"
+          - name: FREQUENCY_OF_REQUESTS
+            value: "300"
+          - name: MAX_NUMBER_OF_FAILURE_REQUESTS
+            value: "10"
+          - name: ORACLE_PRIVATE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: secret-oracle2
+                key: ORACLE_PRIVATE_KEY
+                optional: false
+          - name: WS_URL_RELAY
+            valueFrom:
+              secretKeyRef:
+                name: secret-oracle2
+                key: WS_URL_RELAY
+                optional: false
+          - name: WS_URL_PARA
+            valueFrom:
+              secretKeyRef:
+                name: secret-oracle2
+                key: WS_URL_PARA
+                optional: false
