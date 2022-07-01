@@ -23,7 +23,7 @@ spec:
             value: "0x8acdf52eB1c78c0e641Ea37dcA3b8F4010E235f2"
           - name: LOG_LEVEL_STDOUT
             value: "INFO"
-          - name: PROMETHEUS_METRICS_PORT
+          - name: REST_API_SERVER_PORT
             value: "8001"
           - name: PROMETHEUS_METRICS_PREFIX
             value: "oracle"
