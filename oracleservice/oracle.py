@@ -98,7 +98,7 @@ class Oracle:
         """
         while True:
             try:
-                if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_num_of_failure_reqs:
+                if self.failure_reqs_count[self.service_params.substrate.url] > self.service_params.max_number_of_failure_reqs:  # noqa: E501
                     self.undesirable_urls.add(self.service_params.substrate.url)
                     self.service_params.substrate.websocket.shutdown()
                     self.service_params.substrate = create_interface(
@@ -131,7 +131,7 @@ class Oracle:
         """
         while True:
             try:
-                if self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] > self.service_params.max_num_of_failure_reqs:  # noqa: E501
+                if self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] > self.service_params.max_number_of_failure_reqs:  # noqa: E501
                     self.undesirable_urls.add(self.service_params.w3.provider.endpoint_uri)
                     self.service_params.w3 = create_provider(
                         urls=self.service_params.ws_urls_para,
