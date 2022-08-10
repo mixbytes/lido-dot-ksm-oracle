@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import socket
@@ -8,11 +9,14 @@ import urllib
 from flask_caching import Cache
 from os.path import exists
 from server_thread import ServerThread
+from socket import gaierror
 from substrateinterface import SubstrateInterface
+from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from web3 import Web3
-from web3.exceptions import ABIFunctionNotFound
-from websocket._exceptions import WebSocketAddressException
-from websockets.exceptions import InvalidStatusCode
+from web3.exceptions import ABIFunctionNotFound, BadFunctionCallOutput, TimeExhausted, ValidationError
+from websocket._exceptions import WebSocketAddressException, WebSocketConnectionClosedException
+from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
+
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +28,43 @@ LOG_LEVELS = (
     'CRITICAL',
 )
 
+EXPECTED_NETWORK_EXCEPTIONS = (
+    ABIFunctionNotFound,
+    AssertionError,
+    asyncio.exceptions.TimeoutError,
+    BadFunctionCallOutput,
+    BlockNotFound,
+    BrokenPipeError,
+    ConnectionClosedError,
+    ConnectionRefusedError,
+    ConnectionResetError,
+    gaierror,
+    InvalidMessage,
+    InvalidStatusCode,
+    KeyError,
+    OSError,
+    SubstrateRequestException,
+    TimeExhausted,
+    TimeoutError,
+    ValidationError,
+    ValueError,
+    WebSocketAddressException,
+    WebSocketConnectionClosedException,
+)
+
+
 cache = Cache()
 
 
-def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, rest_api_server: ServerThread = None):
+def stop_signal_handler(
+        sig: int = None, frame=None,
+        substrate: SubstrateInterface = None,
+        rest_api_server: ServerThread = None,
+):
     """Handle signal, close substrate interface websocket connection and terminate the process"""
     logger.debug(f"Receiving signal: {sig}")
     if substrate is not None:
-        logger.debug("Closing substrate interface websocket connection")
+        logger.debug("Closing the SubstrateInterface websocket connection")
         try:
             substrate.websocket.sock.shutdown(socket.SHUT_RDWR)
         except (
@@ -40,7 +73,7 @@ def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, r
         ) as exc:
             logger.warning(exc)
         else:
-            logger.debug(f"Connection to relaychain node {substrate.url} is closed")
+            logger.debug(f"Connection to the relay chain node {substrate.url} is closed")
 
     if rest_api_server is not None:
         logger.info("Shutting down the REST API server")
@@ -52,9 +85,10 @@ def stop_signal_handler(sig: int, frame, substrate: SubstrateInterface = None, r
     sys.exit()
 
 
-def create_provider(urls: list, timeout: int = 60, undesirable_urls: set = set()) -> Web3:
+def create_provider(urls: list, timeout: int = 60, undesirable_urls: list = None) -> Web3:
     """Create web3 websocket provider with one of the nodes given in the list"""
-    provider = None
+    if undesirable_urls is None:
+        undesirable_urls = set()
     tried_all = False
 
     while True:
