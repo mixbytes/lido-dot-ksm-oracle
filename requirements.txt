@@ -1,5 +1,5 @@
-flask==2.0.3
+flask==2.1.2
 flask-caching==2.0.0
-prometheus-client==0.11.0
-substrate-interface==1.1.9
-web3==5.24.0
+prometheus-client==0.13.1
+substrate-interface==1.2.7
+web3==5.27.0

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import time
 
@@ -6,14 +5,9 @@ from dataclasses import dataclass, field
 from prometheus_metrics import metrics_exporter
 from report_parameters_reader import ReportParametersReader
 from service_parameters import ServiceParameters
-from socket import gaierror
 from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface import Keypair
-from utils import cache, create_interface, create_provider
-from web3.exceptions import BadFunctionCallOutput
-from web3 import Account
-from websocket._exceptions import WebSocketConnectionClosedException
-from websockets.exceptions import ConnectionClosedError, InvalidMessage, InvalidStatusCode
+from utils import cache, create_interface, create_provider, EXPECTED_NETWORK_EXCEPTIONS
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +16,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Oracle:
     """A class that contains all the logic of the oracle's work"""
-    account: Account
     service_params: ServiceParameters
 
     default_mode_started: bool = False
@@ -59,8 +52,8 @@ class Oracle:
         with metrics_exporter.para_exceptions_count.count_exceptions():
             self._restore_state()
 
-        balance = self.service_params.w3.eth.get_balance(self.account.address)
-        metrics_exporter.oracle_balance.labels(self.account.address).set(balance)
+        balance = self.service_params.w3.eth.get_balance(self.service_params.account.address)
+        metrics_exporter.oracle_balance.labels(self.service_params.account.address).set(balance)
 
         while True:
             logger.debug(f"Getting active era. Previous active era id: {self.previous_active_era_id}")
@@ -92,15 +85,15 @@ class Oracle:
         self.default_mode_started = False
 
         self.was_recovered = True
-        self._recover_connection_to_relaychain()
+        self._recover_connection_to_relay_chain()
         self._recover_connection_to_parachain()
 
         metrics_exporter.is_recovery_mode_active.set(False)
         logger.info("Recovery mode is completed")
 
-    def _recover_connection_to_relaychain(self):
+    def _recover_connection_to_relay_chain(self):
         """
-        Recover connection to relaychain.
+        Recover connection to relay chain.
         If failure requests counter exceeds the allowed value, reconnect to another node.
         """
         while True:
@@ -121,20 +114,10 @@ class Oracle:
 
             except Exception as exc:
                 exc_type = type(exc)
-                if exc_type in [
-                    asyncio.exceptions.TimeoutError,
-                    BrokenPipeError,
-                    ConnectionClosedError,
-                    ConnectionResetError,
-                    gaierror,
-                    InvalidMessage,
-                    OSError,
-                    TimeoutError,
-                    WebSocketConnectionClosedException,
-                ]:
-                    logger.warning(f"Error: {exc}")
+                if exc_type in EXPECTED_NETWORK_EXCEPTIONS:
+                    logger.warning(f"{type(exc)}: {exc}")
                 else:
-                    logger.error(f"Error: {exc}")
+                    logger.error(f"{type(exc)}: {exc}")
 
                 if self.service_params.substrate.url in self.failure_reqs_count:
                     self.failure_reqs_count[self.service_params.substrate.url] += 1
@@ -148,7 +131,7 @@ class Oracle:
         """
         while True:
             try:
-                if self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] > self.service_params.max_num_of_failure_reqs:
+                if self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] > self.service_params.max_num_of_failure_reqs:  # noqa: E501
                     self.undesirable_urls.add(self.service_params.w3.provider.endpoint_uri)
                     self.service_params.w3 = create_provider(
                         urls=self.service_params.ws_urls_para,
@@ -159,22 +142,10 @@ class Oracle:
 
             except Exception as exc:
                 exc_type = type(exc)
-                if exc_type in [
-                    asyncio.exceptions.TimeoutError,
-                    BadFunctionCallOutput,
-                    BrokenPipeError,
-                    ConnectionClosedError,
-                    ConnectionResetError,
-                    gaierror,
-                    InvalidMessage,
-                    InvalidStatusCode,
-                    OSError,
-                    TimeoutError,
-                    WebSocketConnectionClosedException,
-                ]:
-                    logger.warning(f"Error: {exc}")
+                if exc_type in EXPECTED_NETWORK_EXCEPTIONS:
+                    logger.warning(f"{type(exc)}: {exc}")
                 else:
-                    logger.error(f"Error: {exc}")
+                    logger.error(f"{type(exc)}: {exc}")
 
                 if self.service_params.w3.provider.endpoint_uri in self.failure_reqs_count:
                     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
@@ -197,7 +168,7 @@ class Oracle:
             (era_id, is_reported) = self.service_params.w3.eth.contract(
                 address=self.service_params.contract_address,
                 abi=self.service_params.abi
-            ).functions.isReportedLastEra(self.account.address, stash_acc).call()
+            ).functions.isReportedLastEra(self.service_params.account.address, stash_acc).call()
 
             stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
             self.last_era_reported[stash.public_key] = era_id if is_reported else era_id - 1
@@ -288,9 +259,9 @@ class Oracle:
                 if not self.service_params.debug_mode:
                     self._sign_and_send_to_para(tx, stash, active_era_id - 1)
                 else:
-                    logger.info(f"Skipping sending the transaction for stash {stash.ss58_address}: oracle is running in debug mode")
-                balance = self.service_params.w3.eth.get_balance(self.account.address)
-                metrics_exporter.oracle_balance.labels(self.account.address).set(balance)
+                    logger.info(f"Skipping sending the transaction for stash {stash.ss58_address}: Oracle is running in debug mode")  # noqa: E501
+                balance = self.service_params.w3.eth.get_balance(self.service_params.account.address)
+                metrics_exporter.oracle_balance.labels(self.service_params.account.address).set(balance)
             self.last_era_reported[stash.public_key] = active_era_id - 1
 
         logger.info("Waiting for the next era")
@@ -341,7 +312,7 @@ class Oracle:
 
     def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
-        nonce = self.service_params.w3.eth.get_transaction_count(self.account.address)
+        nonce = self.service_params.w3.eth.get_transaction_count(self.service_params.account.address)
 
         return self.service_params.w3.eth.contract(
             address=self.service_params.contract_address,
@@ -349,7 +320,12 @@ class Oracle:
         ).functions.reportRelay(
             era_id,
             staking_parameters,
-        ).buildTransaction({'from': self.account.address, 'gas': self.service_params.gas_limit, 'nonce': nonce})
+        ).buildTransaction({
+            'from': self.service_params.account.address,
+            'gas': self.service_params.gas_limit,
+            'maxPriorityFeePerGas': self.service_params.max_priority_fee_per_gas,
+            'nonce': nonce,
+        })
 
     def _sign_and_send_to_para(self, tx: dict, stash: Keypair, era_id: int) -> bool:
         """Sign transaction and send to parachain"""
@@ -366,7 +342,10 @@ class Oracle:
             metrics_exporter.tx_revert.observe(1)
             return False
 
-        tx_signed = self.service_params.w3.eth.account.sign_transaction(tx, private_key=self.account.privateKey)
+        tx_signed = self.service_params.w3.eth.account.sign_transaction(
+            tx,
+            private_key=self.service_params.account.privateKey,
+        )
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         logger.info(f"Sending a transaction for stash {stash.ss58_address}")
         tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)

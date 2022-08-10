@@ -47,7 +47,7 @@ class ReportParametersReader:
             'activeBalance': staking_ledger_result['active'],
             'totalBalance': staking_ledger_result['total'],
             'unlocking': [{'balance': elem['value'], 'era': elem['era']} for elem in staking_ledger_result['unlocking']],
-            'claimedRewards': [],  # put aside until storage proof has been implemented // staking_ledger_result['claimedRewards'],
+            'claimedRewards': [],  # put aside until storage proof has been implemented // staking_ledger_result['claimedRewards'],  # noqa: E501
             'stashBalance': stash_free_balance,
             'slashingSpans': staking_ledger_result['slashingSpans_number'],
         }

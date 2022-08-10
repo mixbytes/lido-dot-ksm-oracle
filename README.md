@@ -22,43 +22,17 @@ pip install -r requirements.txt
 
 
 ## Run
-The oracle service receives its configuration from environment variables. You need to provide WS URLs of relay chain and parachain nodes, oracle private key, OracleMaster contract address and parachain ID.
 By default, the `assets` directory contains oracle ABI and the service tries to get it from the `assets/oracle.json` file, but you can change it as follows:
 * Clone `lido-dot-ksm` repository.
 * Run the `brownie compile` command.
 * Copy the contents of the `build/contracts/OracleMaster.json` with the 'abi' key to `assets/oracle.json` or change the `ABI_PATH` environment variable (see below).
 
-To start the service, you need to do the following (instead of using the `ORACLE_PRIVATE_KEY` parameter, you can specify the path to the file, see below):
+The service receives its configuration parameters from environment variables. Export required parameters from this [list](https://github.com/mixbytes/lido-dot-ksm-oracle#full-list-of-configuration-options) and start the service:
 ```shell
-export ORACLE_PRIVATE_KEY=$ORACLE_PRIVATE_KEY_0X_PREFIXED
-export WS_URL_RELAY=$RELAY_CHAIN_NODE_ADDRESS
-export WS_URL_PARA=$PARACHAIN_NODE_ADDRESS
-export CONTRACT_ADDRESS=0xc01Ee7f10EA4aF4673cFff62710E1D7792aBa8f3
 ./oracleservice/start.py
 ```
 
 To stop the service, send a SIGINT or SIGTERM signal to the process.
-
-
-## Run as docker container
-* Choose one of the configs: `.env.moonbase`, `.env.devnet` or `.env.development`.
-* Set the variable `ORACLE_PRIVATE_KEY_PATH` or `ORACLE_PRIVATE_KEY`.
-* If you chose `.env.development`, edit the `CONTRACT_ADDRESS` variable. 
-* Check the other variables in config for relevance.
-
-To build the container:
-```shell
-sudo docker build -t lido-oracle .
-```
-
-To start the service (instead of using the `ORACLE_PRIVATE_KEY` parameter, you can specify the path to the file, see below):
-```shell
-export ORACLE_PRIVATE_KEY=0x...
-export ENVIRONMENT=moonbase
-export ORACLE_NUMBER=1
-source .env.$ENVIRONMENT
-sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORACLE_NUMBER} -p $REST_API_SERVER_PORT:8001 -d lido-oracle
-```
 
 
 ## Full list of configuration options
@@ -70,6 +44,7 @@ sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORAC
 * `ORACLE_PRIVATE_KEY` - Oracle private key, 0x prefixed. Used if there is no file with the key. **Required**.
 * `ABI_PATH` - Path to ABI file. The default value is `assets/oracle.json`.
 * `GAS_LIMIT` - The predefined gas limit for composed transaction. The default value is 10000000.
+* `MAX_PRIORITY_FEE_PER_GAS` - The [maxPriorityFeePerGas](https://ethereum.org/en/developers/docs/gas/#priority-fee) transaction parameter. The default value is 0.
 * `FREQUENCY_OF_REQUESTS` - The frequency of sending requests to receive the active era in seconds. The default value is 180.
 * `MAX_NUMBER_OF_FAILURE_REQUESTS` - If the number of failure requests exceeds this value, the node (relay chain or parachain) is blacklisted for TIMEOUT seconds during recovery mode. The default value is 10.
 * `TIMEOUT` - The time the failure node stays in the black list in recovery mode. The default value is 60 seconds.
@@ -87,7 +62,7 @@ sudo docker run -e ORACLE_PRIVATE_KEY=${ORACLE_PRIVATE_KEY} --name oracle_${ORAC
 
 ## Prometheus metrics
 
-Prometheus exporter provides the following metrics.
+The Prometheus exporter provides the following metrics.
 
 | name                                                               | description                                                                                      | frequency                                                    |
 |--------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|--------------------------------------------------------------|
@@ -107,14 +82,14 @@ Prometheus exporter provides the following metrics.
 | **oracle_balance**                                <br> *Gauge*     | Oracle balance                                                                                   | Every change of era                                          |
 | **tx_revert**                                     <br> *Histogram* | Number of failed transactions                                                                    | Every unsuccessful sending of a report                       |
 | **tx_success**                                    <br> *Histogram* | Number of successful transactions                                                                | Every successful sending of a report                         |
-| **para_exceptions_count**                         <br> *Counter*   | Parachain exceptions count                                                                       |                                                              |
-| **relay_exceptions_count**                        <br> *Counter*   | Relay chain exceptions count                                                                     |                                                              |
+| **para_exceptions_count**                         <br> *Counter*   | Parachain exceptions count                                                                       | Every exception in the parachain                             |
+| **relay_exceptions_count**                        <br> *Counter*   | Relay chain exceptions count                                                                     | Every exception in relay chain                               |
 
 
 ## REST API
 Prometheus metrics are provided by URL '/metrics'.
 
-Oracle status is provided by URL '/healthcheck'. The following states are possible:
+The status of the oracle is provided by URL '/healthcheck'. The following states are possible:
 * not working - the service is in parameter preparation mode;
 * starting - the service is starting but has not yet started monitoring the event;
 * monitoring - the service is monitoring the event;
