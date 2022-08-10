@@ -323,6 +323,7 @@ class Oracle:
         ).buildTransaction({
             'from': self.service_params.account.address,
             'gas': self.service_params.gas_limit,
+            'maxPriorityFeePerGas': self.service_params.max_priority_fee_per_gas,
             'nonce': nonce,
         })
 

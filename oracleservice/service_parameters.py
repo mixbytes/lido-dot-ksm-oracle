@@ -20,6 +20,7 @@ DEFAULT_FREQUENCY_OF_REQUESTS = 180
 DEFAULT_GAS_LIMIT = 10000000
 DEFAULT_INITIAL_BLOCK_NUMBER = 1
 DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
+DEFAULT_MAX_PRIORITY_FER_PER_GAS = 0
 DEFAULT_PARA_ID = 999
 DEFAULT_SS58_FORMAT = 42
 DEFAULT_TYPE_REGISTRY_PRESET = 'kusama'
@@ -88,6 +89,9 @@ class ServiceParameters:
 
         self.para_id = int(os.getenv('PARA_ID', DEFAULT_PARA_ID))
         assert self.para_id >= 0, "The 'PARA_ID' parameter must be non-negative integer"
+
+        self.max_priority_fee_per_gas = int(os.getenv('MAX_PRIORITY_FEE_PER_GAS', DEFAULT_MAX_PRIORITY_FER_PER_GAS))
+        assert self.max_priority_fee_per_gas >= 0, "The 'MAX_PRIORITY_FEE_PER_GAS' parameter must be non-negative integer"
 
         self.gas_limit = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
         assert self.gas_limit > 0, "The 'GAS_LIMIT' parameter must be positive integer"

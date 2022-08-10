@@ -27,7 +27,7 @@ By default, the `assets` directory contains oracle ABI and the service tries to 
 * Run the `brownie compile` command.
 * Copy the contents of the `build/contracts/OracleMaster.json` with the 'abi' key to `assets/oracle.json` or change the `ABI_PATH` environment variable (see below).
 
-The service receives its configuration parameters from environment variables. Export required parameters from this (list)[https://github.com/mixbytes/lido-dot-ksm-oracle#full-list-of-configuration-options] and start the service:
+The service receives its configuration parameters from environment variables. Export required parameters from this [list](https://github.com/mixbytes/lido-dot-ksm-oracle#full-list-of-configuration-options) and start the service:
 ```shell
 ./oracleservice/start.py
 ```
@@ -44,6 +44,7 @@ To stop the service, send a SIGINT or SIGTERM signal to the process.
 * `ORACLE_PRIVATE_KEY` - Oracle private key, 0x prefixed. Used if there is no file with the key. **Required**.
 * `ABI_PATH` - Path to ABI file. The default value is `assets/oracle.json`.
 * `GAS_LIMIT` - The predefined gas limit for composed transaction. The default value is 10000000.
+* `MAX_PRIORITY_FEE_PER_GAS` - The [maxPriorityFeePerGas](https://ethereum.org/en/developers/docs/gas/#priority-fee) transaction parameter. The default value is 0.
 * `FREQUENCY_OF_REQUESTS` - The frequency of sending requests to receive the active era in seconds. The default value is 180.
 * `MAX_NUMBER_OF_FAILURE_REQUESTS` - If the number of failure requests exceeds this value, the node (relay chain or parachain) is blacklisted for TIMEOUT seconds during recovery mode. The default value is 10.
 * `TIMEOUT` - The time the failure node stays in the black list in recovery mode. The default value is 60 seconds.
