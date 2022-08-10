@@ -31,7 +31,7 @@ LOG_LEVELS = (
 EXPECTED_NETWORK_EXCEPTIONS = (
     ABIFunctionNotFound,
     AssertionError,
-    asyncio.exceptions.TimeoutError,
+    asyncio.TimeoutError,
     BadFunctionCallOutput,
     BlockNotFound,
     BrokenPipeError,
