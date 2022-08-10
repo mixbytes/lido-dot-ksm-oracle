@@ -42,7 +42,7 @@ class ServiceParameters:
 
     debug_mode: bool
     frequency_of_requests: int
-    max_num_of_failure_reqs: int
+    max_number_of_failure_reqs: int
     oracle_status_lock: Lock
     timeout: int
 
