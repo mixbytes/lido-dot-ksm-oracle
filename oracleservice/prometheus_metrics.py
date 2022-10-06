@@ -22,6 +22,7 @@ class MetricsExporter:
         self.last_failed_era = Gauge('last_failed_era', "the last era for which sending the report ended with a revert", namespace=_prefix)  # noqa: E501
         self.previous_era_change_block_number = Gauge('previous_era_change_block_number', "block number of the previous era change", namespace=_prefix)  # noqa: E501
         self.time_elapsed_until_last_report = Gauge('time_elapsed_until_last_report', "the time elapsed until the last report from the unix epoch in seconds", namespace=_prefix)  # noqa: E501
+        self.era_update_delayed = Gauge('era_update_delayed', "1 if the era has not been updated for a long time", namespace=_prefix)  # noqa: E501
 
         self.total_stashes_free_balance = Gauge('total_stashes_free_balance', "total free balance of all stash accounts", namespace=_prefix)  # noqa: E501
         self.oracle_balance = Gauge('oracle_balance', "oracle balance [wei]", ['address'], namespace=_prefix)

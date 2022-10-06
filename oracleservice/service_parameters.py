@@ -23,6 +23,7 @@ DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS = 10
 DEFAULT_MAX_PRIORITY_FER_PER_GAS = 0
 DEFAULT_SS58_FORMAT = 42
 DEFAULT_TYPE_REGISTRY_PRESET = 'kusama'
+DEFAULT_WAITING_TIME_BEFORE_SHUTDOWN = 600
 
 MAX_ATTEMPTS_TO_RECONNECT = 20
 
@@ -44,6 +45,7 @@ class ServiceParameters:
     max_number_of_failure_requests: int
     oracle_status_lock: Lock
     timeout: int
+    waiting_time_before_shutdown: int
 
     rest_api_ip_address: str
     rest_api_port: int
@@ -97,6 +99,13 @@ class ServiceParameters:
 
         self.timeout = int(os.getenv('TIMEOUT', DEFAULT_TIMEOUT))
         assert self.timeout > 0, "The 'TIMEOUT' parameter must be positive integer"
+
+        self.waiting_time_before_shutdown = int(os.getenv(
+            'WAITING_TIME_BEFORE_SHUTDOWN',
+            DEFAULT_WAITING_TIME_BEFORE_SHUTDOWN,
+        ))
+        assert self.waiting_time_before_shutdown >= 0, \
+            "The 'WAITING_TIME_BEFORE_SHUTDOWN' parameter must be non-negative integer"
 
         self.era_duration_in_blocks = int(os.getenv('ERA_DURATION_IN_BLOCKS', DEFAULT_ERA_DURATION_IN_BLOCKS))
         assert self.era_duration_in_blocks > 0, "The 'ERA_DURATION_IN_BLOCKS' parameter must be positive integer"
