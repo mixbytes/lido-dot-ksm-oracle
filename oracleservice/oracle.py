@@ -88,7 +88,8 @@ class Oracle:
             time_end = time.time()
             self.time_of_era_immutability += time_end - time_start
             if self.time_of_era_immutability > total_era_update_delay:
-                metrics_exporter.era_update_delayed(True)
+                logger.warning("Era update is delayed")
+                metrics_exporter.era_update_delayed.set(True)
                 logger.info(f"Sleeping for {self.service_params.waiting_time_before_shutdown} seconds before shutdown")
                 time.sleep(self.service_params.waiting_time_before_shutdown)
                 os.kill(os.getpid(), signal.SIGINT)

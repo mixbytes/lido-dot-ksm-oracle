@@ -1,4 +1,4 @@
-flake8==3.9.2
+flake8==5.0.4
 flask==2.2.2
 flask-caching==2.0.1
 prometheus-client==0.13.1
