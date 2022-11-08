@@ -1,4 +1,6 @@
 import logging
+import os
+import signal
 import time
 
 from dataclasses import dataclass, field
@@ -22,6 +24,7 @@ class Oracle:
     failure_reqs_count: dict = field(default_factory=dict)
     last_era_reported: dict = field(default_factory=dict)
     previous_active_era_id: int = -1
+    time_of_era_immutability: float = 0
     undesirable_urls: set = field(default_factory=set)
     was_recovered: bool = False
 
@@ -55,7 +58,10 @@ class Oracle:
         balance = self.service_params.w3.eth.get_balance(self.service_params.account.address)
         metrics_exporter.oracle_balance.labels(self.service_params.account.address).set(balance)
 
+        total_era_update_delay = self.service_params.era_duration_in_seconds + self.service_params.era_update_delay
         while True:
+            time_start = time.time()
+
             logger.debug(f"Getting active era. Previous active era id: {self.previous_active_era_id}")
             with self.service_params.oracle_status_lock:
                 cache.set('oracle_status', 'monitoring')
@@ -66,6 +72,8 @@ class Oracle:
 
             active_era_id = active_era.value['index']
             if active_era_id > self.previous_active_era_id:
+                self.time_of_era_immutability = 0
+                time_start = time.time()
                 self._handle_era_change(active_era_id, active_era.value['start'])
             elif self.was_recovered:
                 logger.info(f"Era {active_era_id - 1} has already been processed. Waiting for the next era")
@@ -73,8 +81,18 @@ class Oracle:
 
             with self.service_params.oracle_status_lock:
                 cache.set('oracle_status', 'monitoring')
-            logger.debug(f"Sleep for {self.service_params.frequency_of_requests} seconds until the next request")
+
+            logger.info(f"Sleep for {self.service_params.frequency_of_requests} seconds until the next request")
             time.sleep(self.service_params.frequency_of_requests)
+
+            time_end = time.time()
+            self.time_of_era_immutability += time_end - time_start
+            if self.time_of_era_immutability > total_era_update_delay:
+                logger.warning("Era update is delayed")
+                metrics_exporter.era_update_delayed.set(True)
+                logger.info(f"Sleeping for {self.service_params.waiting_time_before_shutdown} seconds before shutdown")
+                time.sleep(self.service_params.waiting_time_before_shutdown)
+                os.kill(os.getpid(), signal.SIGINT)
 
     def start_recovery_mode(self):
         """Start of the Oracle recovery mode."""
