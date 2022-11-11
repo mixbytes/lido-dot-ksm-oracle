@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from prometheus_metrics import metrics_exporter
 from service_parameters import ServiceParameters
 from substrateinterface import Keypair
+from typing import Union
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class ReportParametersReader:
             'slashingSpans': staking_ledger_result['slashingSpans_number'],
         }
 
-    def _get_ledger_data(self, block_hash: str, stash: Keypair) -> dict:
+    def _get_ledger_data(self, block_hash: str, stash: Keypair) -> Union[dict, None]:
         """Get ledger data using stash account address"""
         controller = self.service_params.substrate.query(
             module='Staking',
