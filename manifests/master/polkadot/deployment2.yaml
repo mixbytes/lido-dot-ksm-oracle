@@ -47,6 +47,8 @@ spec:
             value: "10000000000"
           - name: ABI_PATH
             value: "./assets/oracle.json"
+          - name: ERA_DELAY_TIME
+            value: "1800"
           - name: ORACLE_PRIVATE_KEY
             valueFrom:
               secretKeyRef:
