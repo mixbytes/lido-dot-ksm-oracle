@@ -21,15 +21,21 @@ class Oracle:
     service_params: ServiceParameters
 
     default_mode_started: bool = False
+    era_delay_time: float = 0.
+    era_delay_time_start: float = 0.
     failure_reqs_count: dict = field(default_factory=dict)
     last_era_reported: dict = field(default_factory=dict)
     previous_active_era_id: int = -1
-    time_of_era_immutability: float = 0
+    time_of_era_immutability: float = 0.
     undesirable_urls: set = field(default_factory=set)
     was_recovered: bool = False
 
     def __post_init__(self):
         self.report_parameters_reader = ReportParametersReader(self.service_params)
+        self.oracle_master_contract = self.service_params.w3.eth.contract(
+            address=self.service_params.contract_address,
+            abi=self.service_params.abi,
+        )
 
     def start_default_mode(self):
         """Start of the Oracle default mode"""
@@ -71,6 +77,7 @@ class Oracle:
             )
 
             active_era_id = active_era.value['index']
+            self._assert_era_with_oracle_master(active_era_id)
             if active_era_id > self.previous_active_era_id:
                 self.time_of_era_immutability = 0
                 time_start = time.time()
@@ -108,6 +115,21 @@ class Oracle:
 
         metrics_exporter.is_recovery_mode_active.set(False)
         logger.info("Recovery mode is completed")
+
+    def _assert_era_with_oracle_master(self, active_era_id: int):
+        """Assert current active era with OracleMaster"""
+        oracle_master_era_id = self.oracle_master_contract.functions.getCurrentEraId().call()
+        if active_era_id != oracle_master_era_id:
+            if self.era_delay_time_start == 0:
+                self.era_delay_time_start = time.time()
+            else:
+                self.era_delay_time += time.time() - self.era_delay_time_start
+            if self.service_params.era_delay_time < self.era_delay_time:
+                logger.error("[OracleMaster] Era update is delayed")
+                metrics_exporter.era_update_delayed.set(True)
+                logger.info(f"Sleeping for {self.service_params.waiting_time_before_shutdown} seconds before shutdown")
+                time.sleep(self.service_params.waiting_time_before_shutdown)
+                os.kill(os.getpid(), signal.SIGINT)
 
     def _recover_connection_to_relay_chain(self):
         """
@@ -178,15 +200,11 @@ class Oracle:
 
     def _restore_state(self):
         """Restore the state after starting the default mode"""
-        stash_accounts = self.service_params.w3.eth.contract(
-            address=self.service_params.contract_address,
-            abi=self.service_params.abi,
-        ).functions.getStashAccounts().call()
+        stash_accounts = self.oracle_master_contract.functions.getStashAccounts().call()
         for stash_acc in stash_accounts:
-            (era_id, is_reported) = self.service_params.w3.eth.contract(
-                address=self.service_params.contract_address,
-                abi=self.service_params.abi
-            ).functions.isReportedLastEra(self.service_params.account.address, stash_acc).call()
+            (era_id, is_reported) = self.oracle_master_contract.functions.isReportedLastEra(
+                self.service_params.account.address, stash_acc
+            ).call()
 
             stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
             self.last_era_reported[stash.public_key] = era_id if is_reported else era_id - 1
@@ -234,10 +252,7 @@ class Oracle:
 
         self.failure_reqs_count[self.service_params.substrate.url] += 1
         with metrics_exporter.para_exceptions_count.count_exceptions():
-            stash_accounts = self.service_params.w3.eth.contract(
-                address=self.service_params.contract_address,
-                abi=self.service_params.abi,
-            ).functions.getStashAccounts().call()
+            stash_accounts = self.oracle_master_contract.functions.getStashAccounts().call()
         self.failure_reqs_count[self.service_params.substrate.url] -= 1
         if not stash_accounts:
             logger.info("No stash accounts found: waiting for the next era")
@@ -332,10 +347,7 @@ class Oracle:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
         nonce = self.service_params.w3.eth.get_transaction_count(self.service_params.account.address)
 
-        return self.service_params.w3.eth.contract(
-            address=self.service_params.contract_address,
-            abi=self.service_params.abi
-        ).functions.reportRelay(
+        return self.oracle_master_contract.functions.reportRelay(
             era_id,
             staking_parameters,
         ).buildTransaction({

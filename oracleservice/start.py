@@ -31,6 +31,7 @@ oracle_status_lock = Lock()
 
 
 def main():
+    service_params = None
     try:
         log_level = os.getenv('LOG_LEVEL_STDOUT', DEFAULT_LOG_LEVEL_STDOUT)
         check_log_level(log_level)

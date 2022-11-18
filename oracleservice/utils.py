@@ -6,6 +6,7 @@ import sys
 import time
 import urllib
 
+from eth_typing import ChecksumAddress
 from flask_caching import Cache
 from os.path import exists
 from server_thread import ServerThread
@@ -85,7 +86,7 @@ def stop_signal_handler(
     sys.exit()
 
 
-def create_provider(urls: list, timeout: int = 60, undesirable_urls: list = None) -> Web3:
+def create_provider(urls: list, timeout: int = 60, undesirable_urls: set or list = None) -> Web3:
     """Create web3 websocket provider with one of the nodes given in the list"""
     if undesirable_urls is None:
         undesirable_urls = set()
@@ -126,10 +127,12 @@ def create_provider(urls: list, timeout: int = 60, undesirable_urls: list = None
 def create_interface(
         urls: list, ss58_format: int = 2,
         type_registry_preset: str = 'kusama',
-        timeout: int = 60, undesirable_urls: set = set(),
+        timeout: int = 60, undesirable_urls=None,
         substrate: SubstrateInterface = None,
 ) -> SubstrateInterface:
     """Create Substrate interface with the first node that comes along, if there is no undesirable one"""
+    if undesirable_urls is None:
+        undesirable_urls = set()
     recovering = False if substrate is None else True
     tried_all = False
 
@@ -201,7 +204,8 @@ def get_private_key(private_key_path: str, private_key: str) -> str:
             pk = f.readline().strip()
             Web3().eth.account.from_key(pk)
             return pk
-    except Exception:
+    except Exception as exc:
+        logger.info(f"Failed to parse the private key from file: {exc}")
         return private_key
 
 
@@ -212,7 +216,7 @@ def check_contract_address(w3: Web3, contract_addr: str):
         raise ValueError("Incorrect contract address or the contract is not deployed")
 
 
-def check_abi(w3: Web3, contract_addr: str, abi: list, oracle_addr: str):
+def check_abi(w3: Web3, contract_addr: ChecksumAddress, abi: list):
     """Check the provided ABI by checking JSON file and calling the contract methods"""
     contract = w3.eth.contract(address=contract_addr, abi=abi)
     try:

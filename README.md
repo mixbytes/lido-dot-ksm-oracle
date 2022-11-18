@@ -56,7 +56,8 @@ To stop the service, send a SIGINT or SIGTERM signal to the process.
 * `REST_API_SERVER_PORT` - REST API server port. The default value is `800`.
 * `LOG_LEVEL_STDOUT` - Logging level of the logging module: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. The default level is `INFO`.
 * `ORACLE_MODE` - If the value is `DEBUG`, the oracle will not send transactions, but only prepare a report.
-* `ERA_UPDATE_DELAY` - The maximum delay with which an era can be updated before the service stops working. The default value is `360`.
+* `ERA_UPDATE_DELAY` - The maximum delay in seconds with which an era can be updated before the service stops working. The default value is `360`.
+* `ERA_DELAY_TIME` - The maximum delay in seconds with which an era can be updated comparing to the OracleMaster before the service stops working. The default value is `600`.
 * `WAITING_TIME_BEFORE_SHUTDOWN` - Waiting time in seconds before shutdown the service. The default value is `600`.
 
 
