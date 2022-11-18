@@ -3,6 +3,7 @@ import os
 import sys
 import utils
 
+from eth_typing import ChecksumAddress
 from pathlib import Path
 from substrateinterface import SubstrateInterface
 from threading import Lock
@@ -14,6 +15,7 @@ DEFAULT_REST_API_PORT = 8000
 DEFAULT_TIMEOUT = 60
 
 DEFAULT_ABI_PATH = Path(__file__).parent.parent.as_posix() + '/assets/oracle.json'
+DEFAULT_ERA_DELAY_TIME = 600
 DEFAULT_ERA_DURATION_IN_BLOCKS = 30
 DEFAULT_ERA_DURATION_IN_SECONDS = 180
 DEFAULT_ERA_UPDATE_DELAY = 360
@@ -32,13 +34,14 @@ logger = logging.getLogger(__name__)
 
 class ServiceParameters:
     account: Account
-    contract_address: str
+    contract_address: ChecksumAddress
     abi: list
     gas_limit: int
 
     era_duration_in_blocks: int
     era_duration_in_seconds: int
     era_update_delay: int
+    era_delay_time: int
 
     debug_mode: bool
     frequency_of_requests: int
@@ -90,6 +93,9 @@ class ServiceParameters:
         self.gas_limit = int(os.getenv('GAS_LIMIT', DEFAULT_GAS_LIMIT))
         assert self.gas_limit > 0, "The 'GAS_LIMIT' parameter must be positive integer"
 
+        self.era_delay_time = int(os.getenv('ERA_DELAY_TIME', DEFAULT_ERA_DELAY_TIME))
+        assert self.era_delay_time >= 0, "The 'ERA_DELAY_TIME' parameter must be non-negative integer"
+
         self.max_number_of_failure_requests = int(os.getenv(
             'MAX_NUMBER_OF_FAILURE_REQUESTS',
             DEFAULT_MAX_NUMBER_OF_FAILURE_REQUESTS,
@@ -135,16 +141,16 @@ class ServiceParameters:
         self.w3.eth.account.from_key(oracle_private_key)
 
         logger.info("Checking the contract address")
-        self.contract_address = os.getenv('CONTRACT_ADDRESS')
-        assert self.contract_address, "The contract address is not provided"
-        self.contract_address = self.w3.toChecksumAddress(self.contract_address)
+        contract_address = os.getenv('CONTRACT_ADDRESS')
+        assert contract_address, "The contract address is not provided"
+        self.contract_address = self.w3.toChecksumAddress(contract_address)
         utils.check_contract_address(self.w3, self.contract_address)
         logger.info("The contract address is checked")
 
         self.account = self.w3.eth.account.from_key(oracle_private_key)
         logger.info("Checking the ABI")
         self.abi = utils.get_abi(abi_path)
-        utils.check_abi(self.w3, self.contract_address, self.abi, self.account.address)
+        utils.check_abi(self.w3, self.contract_address, self.abi)
         logger.info("The ABI is checked")
 
         logger.info("Successfully checked configuration parameters")
