@@ -82,6 +82,8 @@ class Oracle:
                 self.time_of_era_immutability = 0
                 time_start = time.time()
                 self._handle_era_change(active_era_id, active_era.value['start'])
+                self.era_delay_time = 0
+                self.era_delay_time_start = 0
             elif self.was_recovered:
                 logger.info(f"Era {active_era_id - 1} has already been processed. Waiting for the next era")
                 self.was_recovered = False
