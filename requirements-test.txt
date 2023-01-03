@@ -3,5 +3,5 @@ flask==2.2.2
 flask-caching==2.0.1
 prometheus-client==0.13.1
 pytest==6.2.5
-substrate-interface==1.4.0
+substrate-interface==1.4.2
 web3==5.31.0
