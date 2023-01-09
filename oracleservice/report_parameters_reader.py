@@ -5,6 +5,7 @@ from prometheus_metrics import metrics_exporter
 from service_parameters import ServiceParameters
 from substrateinterface import Keypair
 from typing import Union
+from utils import EXPECTED_NETWORK_EXCEPTIONS
 
 
 logger = logging.getLogger(__name__)
@@ -18,8 +19,6 @@ class ReportParametersReader:
     def get_stash_staking_parameters(self, stash: Keypair, block_hash: str) -> dict:
         """Get staking parameters for specific stash from specific block or from the head"""
         logger.info(f"Reading staking parameters for stash {stash.ss58_address}")
-        if block_hash is None:
-            block_hash = self.service_params.substrate.get_chain_head()
 
         with metrics_exporter.relay_exceptions_count.count_exceptions():
             stash_free_balance = self._get_stash_free_balance(stash, block_hash)
@@ -55,78 +54,113 @@ class ReportParametersReader:
 
     def _get_ledger_data(self, block_hash: str, stash: Keypair) -> Union[dict, None]:
         """Get ledger data using stash account address"""
-        controller = self.service_params.substrate.query(
-            module='Staking',
-            storage_function='Bonded',
-            params=[stash.ss58_address],
-            block_hash=block_hash,
-        )
+        try:
+            controller = self.service_params.substrate.query(
+                module='Staking',
+                storage_function='Bonded',
+                params=[stash.ss58_address],
+                block_hash=block_hash,
+            )
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the controller {stash.ss58_address}: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the controller {stash.ss58_address}: {exc}")
+            raise exc
         if controller.value is None:
             return None
 
         controller = Keypair(ss58_address=controller.value)
 
-        ledger = self.service_params.substrate.query(
-            module='Staking',
-            storage_function='Ledger',
-            params=[controller.ss58_address],
-            block_hash=block_hash,
-        )
+        try:
+            ledger = self.service_params.substrate.query(
+                module='Staking',
+                storage_function='Ledger',
+                params=[controller.ss58_address],
+                block_hash=block_hash,
+            )
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the ledger {controller.ss58_address}: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the ledger {controller.ss58_address}: {exc}")
+            raise exc
 
         result = {'controller': controller, 'stash': stash}
         result.update(ledger.value)
 
-        slashing_spans = self.service_params.substrate.query(
-            module='Staking',
-            storage_function='SlashingSpans',
-            params=[controller.ss58_address],
-            block_hash=block_hash,
-        )
-        if slashing_spans.value is None:
-            result['slashingSpans_number'] = 0
-        else:
-            result['slashingSpans_number'] = len(slashing_spans.value['prior'])
+        try:
+            slashing_spans = self.service_params.substrate.query(
+                module='Staking',
+                storage_function='SlashingSpans',
+                params=[controller.ss58_address],
+                block_hash=block_hash,
+            )
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the slashing spans {controller.ss58_address}: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the slashing spans  {controller.ss58_address}: {exc}")
+            raise exc
+        result['slashingSpans_number'] = 0 if slashing_spans.value is None else len(slashing_spans.value['prior'])
 
         return result
 
     def _get_stash_free_balance(self, stash: Keypair, block_hash: str) -> int:
         """Get stash accounts free balances"""
-        account_info = self.service_params.substrate.query(
-            module='System',
-            storage_function='Account',
-            params=[stash.ss58_address],
-            block_hash=block_hash,
-        )
+        try:
+            account_info = self.service_params.substrate.query(
+                module='System',
+                storage_function='Account',
+                params=[stash.ss58_address],
+                block_hash=block_hash,
+            )
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the account {stash.ss58_address} info: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the account {stash.ss58_address} info: {exc}")
+            raise exc
         metrics_exporter.total_stashes_free_balance.inc(account_info.value['data']['free'])
 
         return account_info.value['data']['free']
 
-    def _get_stake_status(self, stash: Keypair, block_hash: str = None) -> int:
+    def _get_stake_status(self, stash: Keypair, block_hash: str) -> int:
         """
         Get stash account status.
         0 - Idle, 1 - Nominator, 2 - Validator, 3 - None
         """
-        if block_hash is None:
-            block_hash = self.service_params.substrate.get_chain_head()
-
-        staking_validators = self.service_params.substrate.query(
-            module='Session',
-            storage_function='Validators',
-            block_hash=block_hash,
-        )
-
-        staking_nominators = self.service_params.substrate.query_map(
-            module='Staking',
-            storage_function='Nominators',
-            block_hash=block_hash,
-        )
+        try:
+            staking_nominators = self.service_params.substrate.query_map(
+                module='Staking',
+                storage_function='Nominators',
+                block_hash=block_hash,
+            )
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get nominators: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get nominators: {exc}")
+            raise exc
 
         nominators = set(nominator.value for nominator, _ in staking_nominators)
-        validators = set(validator for validator in staking_validators.value)
-
         if stash.ss58_address in nominators:
             return 1
 
+        try:
+            staking_validators = self.service_params.substrate.query(
+                module='Session',
+                storage_function='Validators',
+                block_hash=block_hash,
+            )
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get validators: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get validators: {exc}")
+            raise exc
+
+        validators = set(validator for validator in staking_validators.value)
         if stash.ss58_address in validators:
             return 2
 
