@@ -16,7 +16,7 @@ def init_log(stdout_level: str = 'INFO'):
 
 def _setup_logger(
     logger: logging.Logger,
-    fmt: str = '%(levelname)8s %(asctime)s <%(module)s> <daemon> %(message)s',
+    fmt: str = '%(levelname)8s %(asctime)s <%(module)s %(lineno)s> %(message)s',
     datefmt: str = '%Y-%m-%d %H:%M:%S',
     stdout_level: str = 'INFO',
 ):

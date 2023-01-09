@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from prometheus_metrics import metrics_exporter
 from report_parameters_reader import ReportParametersReader
 from service_parameters import ServiceParameters
-from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface import Keypair
+from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from utils import cache, create_interface, create_provider, EXPECTED_NETWORK_EXCEPTIONS
 
 
