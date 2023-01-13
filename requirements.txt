@@ -1,3 +1,4 @@
+eth-account==0.5.9
 flask==2.2.2
 flask-caching==2.0.1
 prometheus-client==0.13.1
