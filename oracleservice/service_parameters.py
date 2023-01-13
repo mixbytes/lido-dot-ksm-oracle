@@ -3,11 +3,12 @@ import os
 import sys
 import utils
 
+from eth_account.account import Account
 from eth_typing import ChecksumAddress
 from pathlib import Path
 from substrateinterface import SubstrateInterface
 from threading import Lock
-from web3 import Account, Web3
+from web3 import Web3
 
 
 DEFAULT_REST_API_IP_ADDRESS = '0.0.0.0'
