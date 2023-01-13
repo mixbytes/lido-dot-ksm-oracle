@@ -7,10 +7,13 @@ from dataclasses import dataclass, field
 from prometheus_metrics import metrics_exporter
 from report_parameters_reader import ReportParametersReader
 from service_parameters import ServiceParameters
-from substrateinterface.exceptions import BlockNotFound, SubstrateRequestException
 from substrateinterface import Keypair
+from substrateinterface.exceptions import BlockNotFound
+from typing import Any
 from utils import cache, create_interface, create_provider, EXPECTED_NETWORK_EXCEPTIONS
 
+
+TX_SUCCESS = 1
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,9 @@ class Oracle:
     was_recovered: bool = False
 
     def __post_init__(self):
+        logger.info("Creating an instance of the ReportParametersReader class")
         self.report_parameters_reader = ReportParametersReader(self.service_params)
+        logger.info("Creating an instance of the OracleMaster contract")
         self.oracle_master_contract = self.service_params.w3.eth.contract(
             address=self.service_params.contract_address,
             abi=self.service_params.abi,
@@ -44,25 +49,22 @@ class Oracle:
 
         if not self.default_mode_started:
             self.default_mode_started = True
+            logger.info("Starting default mode")
         else:
-            logger.warning("The default oracle mode is already working")
-
-        logger.info("Starting default mode")
+            logger.warning("The service is already running in default mode")
+            return
 
         metrics_exporter.agent.info({'relay_chain_node_address': self.service_params.substrate.url})
         if self.service_params.substrate.url not in self.failure_reqs_count:
             self.failure_reqs_count[self.service_params.substrate.url] = 0
+        self.failure_reqs_count[self.service_params.substrate.url] += 1
         if self.service_params.w3.provider.endpoint_uri not in self.failure_reqs_count:
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
-
-        self.failure_reqs_count[self.service_params.substrate.url] += 1
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
 
         with metrics_exporter.para_exceptions_count.count_exceptions():
             self._restore_state()
-
-        balance = self.service_params.w3.eth.get_balance(self.service_params.account.address)
-        metrics_exporter.oracle_balance.labels(self.service_params.account.address).set(balance)
+            self._update_oracle_balance()
 
         total_era_update_delay = self.service_params.era_duration_in_seconds + self.service_params.era_update_delay
         while True:
@@ -71,11 +73,7 @@ class Oracle:
             logger.debug(f"Getting active era. Previous active era id: {self.previous_active_era_id}")
             with self.service_params.oracle_status_lock:
                 cache.set('oracle_status', 'monitoring')
-            active_era = self.service_params.substrate.query(
-                module='Staking',
-                storage_function='ActiveEra',
-            )
-
+            active_era = self._get_active_era()
             active_era_id = active_era.value['index']
             self._assert_era_with_oracle_master(active_era_id)
             if active_era_id > self.previous_active_era_id:
@@ -87,10 +85,8 @@ class Oracle:
             elif self.was_recovered:
                 logger.info(f"Era {active_era_id - 1} has already been processed. Waiting for the next era")
                 self.was_recovered = False
-
             with self.service_params.oracle_status_lock:
                 cache.set('oracle_status', 'monitoring')
-
             logger.info(f"Sleep for {self.service_params.frequency_of_requests} seconds until the next request")
             time.sleep(self.service_params.frequency_of_requests)
 
@@ -120,12 +116,21 @@ class Oracle:
 
     def _assert_era_with_oracle_master(self, active_era_id: int):
         """Assert current active era with OracleMaster"""
-        oracle_master_era_id = self.oracle_master_contract.functions.getCurrentEraId().call()
+        try:
+            oracle_master_era_id = self.oracle_master_contract.functions.getCurrentEraId().call()
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the era id from the OracleMaster contract: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the era id from the OracleMaster contract: {exc}")
+            raise exc
+
         if active_era_id != oracle_master_era_id:
             if self.era_delay_time_start == 0:
                 self.era_delay_time_start = time.time()
-            else:
-                self.era_delay_time += time.time() - self.era_delay_time_start
+                return
+
+            self.era_delay_time = time.time() - self.era_delay_time_start
             if self.service_params.era_delay_time < self.era_delay_time:
                 logger.error("[OracleMaster] Era update is delayed")
                 metrics_exporter.era_update_delayed.set(True)
@@ -133,10 +138,27 @@ class Oracle:
                 time.sleep(self.service_params.waiting_time_before_shutdown)
                 os.kill(os.getpid(), signal.SIGINT)
 
+    def _get_active_era(self) -> Any:
+        """Get an active era"""
+        with metrics_exporter.relay_exceptions_count.count_exceptions():
+            try:
+                active_era = self.service_params.substrate.query(
+                    module='Staking',
+                    storage_function='ActiveEra',
+                )
+            except EXPECTED_NETWORK_EXCEPTIONS as exc:
+                logger.warning(f"Failed to get the active era: {exc}")
+                raise exc
+            except Exception as exc:
+                logger.error(f"Failed to get the active era: {exc}")
+                raise exc
+
+        return active_era
+
     def _recover_connection_to_relay_chain(self):
         """
-        Recover connection to relay chain.
-        If failure requests counter exceeds the allowed value, reconnect to another node.
+        Recover the connection to relay chain.
+        If the failure requests counter exceeds the allowed value, reconnect to another node.
         """
         while True:
             try:
@@ -168,8 +190,8 @@ class Oracle:
 
     def _recover_connection_to_parachain(self):
         """
-        Recover connection to parachain.
-        If failure requests counter exceeds the allowed value, reconnect to another node.
+        Recover the connection to parachain.
+        If the failure requests counter exceeds the allowed value, reconnect to another node.
         """
         while True:
             try:
@@ -181,7 +203,11 @@ class Oracle:
                         undesirable_urls=self.undesirable_urls,
                     )
                 break
-
+            except KeyError:
+                if self.service_params.w3.provider.endpoint_uri in self.failure_reqs_count:
+                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
+                else:
+                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
             except Exception as exc:
                 exc_type = type(exc)
                 if exc_type in EXPECTED_NETWORK_EXCEPTIONS:
@@ -194,19 +220,18 @@ class Oracle:
                 else:
                     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
 
-            except KeyError:
-                if self.service_params.w3.provider.endpoint_uri in self.failure_reqs_count:
-                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
-                else:
-                    self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 1
-
     def _restore_state(self):
-        """Restore the state after starting the default mode"""
-        stash_accounts = self.oracle_master_contract.functions.getStashAccounts().call()
+        """Restore the state after starting default mode"""
+        stash_accounts = self._get_stash_accounts()
         for stash_acc in stash_accounts:
-            (era_id, is_reported) = self.oracle_master_contract.functions.isReportedLastEra(
-                self.service_params.account.address, stash_acc
-            ).call()
+            try:
+                (era_id, is_reported) = self.oracle_master_contract.functions.isReportedLastEra(
+                    self.service_params.account.address,
+                    stash_acc,
+                ).call()
+            except Exception as exc:
+                logger.error(f"Failed to call the isReportedLastEra method from the OracleMaster contract: {exc}")
+                raise exc
 
             stash = Keypair(public_key=stash_acc, ss58_format=self.service_params.ss58_format)
             self.last_era_reported[stash.public_key] = era_id if is_reported else era_id - 1
@@ -214,12 +239,19 @@ class Oracle:
     def _wait_in_two_blocks(self, tx_receipt: dict):
         """Wait for two blocks based on information from web3"""
         if 'blockNumber' not in tx_receipt:
-            logger.error("The block number in transaction receipt was not found")
+            logger.error(f"The block number was not found in the transaction receipt: {tx_receipt}")
             return
 
         logger.debug("Waiting in two blocks")
         while True:
-            current_block = self.service_params.w3.eth.get_block('latest')
+            try:
+                current_block = self.service_params.w3.eth.get_block('latest')
+            except EXPECTED_NETWORK_EXCEPTIONS as exc:
+                logger.warning(f"Failed to get the latest block: {exc}")
+                raise exc
+            except Exception as exc:
+                logger.error(f"Failed to get the latest block: {exc}")
+                raise exc
             if current_block is not None and 'number' in current_block:
                 if current_block['number'] > tx_receipt['blockNumber']:
                     break
@@ -228,17 +260,43 @@ class Oracle:
     def _wait_until_finalizing(self, block_hash: str, block_number: int):
         """Wait until the block is finalized"""
         logger.debug(f"Waiting until the block {block_number} is finalized")
-        finalised_head = self.service_params.substrate.get_chain_finalised_head()
-        finalised_head_number = self.service_params.substrate.get_block_header(finalised_head)['header']['number']
-
+        finalised_head_number = self._get_finalised_head_number()
         while finalised_head_number < block_number:
             time.sleep(self.service_params.era_duration_in_seconds / self.service_params.era_duration_in_blocks)
-            finalised_head = self.service_params.substrate.get_chain_finalised_head()
-            finalised_head_number = self.service_params.substrate.get_block_header(finalised_head)['header']['number']
+            finalised_head_number = self._get_finalised_head_number()
 
-        block_current = self.service_params.substrate.get_block_header(block_number=block_number)['header']['hash']
+        try:
+            block_current = self.service_params.substrate.get_block_header(block_number=block_number)['header']['hash']
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the header of the {block_number} block: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the header of the {block_number} block: {exc}")
+            raise exc
         if block_current != block_hash:
             raise BlockNotFound
+
+    def _get_finalised_head_number(self) -> int or None:
+        """Get the finalised head number"""
+        try:
+            finalised_head = self.service_params.substrate.get_chain_finalised_head()
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the finalised head: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the finalised head: {exc}")
+            raise exc
+
+        try:
+            finalised_head_number = self.service_params.substrate.get_block_header(finalised_head)['header']['number']
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the finalised head number: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the finalised head number: {exc}")
+            raise exc
+
+        return finalised_head_number
 
     def _handle_era_change(self, active_era_id: int, era_start_timestamp: int):
         """
@@ -252,10 +310,8 @@ class Oracle:
         metrics_exporter.active_era_id.set(active_era_id)
         metrics_exporter.total_stashes_free_balance.set(0)
 
-        self.failure_reqs_count[self.service_params.substrate.url] += 1
         with metrics_exporter.para_exceptions_count.count_exceptions():
-            stash_accounts = self.oracle_master_contract.functions.getStashAccounts().call()
-        self.failure_reqs_count[self.service_params.substrate.url] -= 1
+            stash_accounts = self._get_stash_accounts()
         if not stash_accounts:
             logger.info("No stash accounts found: waiting for the next era")
             self.previous_active_era_id = active_era_id
@@ -295,8 +351,7 @@ class Oracle:
                     self._sign_and_send_to_para(tx, stash, active_era_id - 1)
                 else:
                     logger.info(f"Skipping sending the transaction for stash {stash.ss58_address}: Oracle is running in debug mode")  # noqa: E501
-                balance = self.service_params.w3.eth.get_balance(self.service_params.account.address)
-                metrics_exporter.oracle_balance.labels(self.service_params.account.address).set(balance)
+                self._update_oracle_balance()
             self.last_era_reported[stash.public_key] = active_era_id - 1
 
         logger.info("Waiting for the next era")
@@ -307,6 +362,33 @@ class Oracle:
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] = 0
         if self.service_params.w3.provider.endpoint_uri in self.undesirable_urls:
             self.undesirable_urls.remove(self.service_params.w3.provider.endpoint_uri)
+
+    def _get_stash_accounts(self) -> tuple:
+        """Get stash accounts from the OracleMaster contract"""
+        self.failure_reqs_count[self.service_params.substrate.url] += 1
+        try:
+            stash_accounts = self.oracle_master_contract.functions.getStashAccounts().call()
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get stash accounts from the OracleMaster contract: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get stash accounts from the OracleMaster contract: {exc}")
+            raise exc
+        self.failure_reqs_count[self.service_params.substrate.url] -= 1
+
+        return stash_accounts
+
+    def _update_oracle_balance(self):
+        """Update the oracle_balance prometheus metric"""
+        try:
+            balance = self.service_params.w3.eth.get_balance(self.service_params.account.address)
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the oracle balance: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the oracle balance: {exc}")
+            raise exc
+        metrics_exporter.oracle_balance.labels(self.service_params.account.address).set(balance)
 
     def _find_last_block(self, era_id: int) -> (str, int):
         """Find the last block of the previous era"""
@@ -337,9 +419,11 @@ class Oracle:
                 block_hash = self.service_params.substrate.get_block_hash(block_number)
             else:
                 block_number = mid
-
-        except SubstrateRequestException:
-            logger.error("Can't find the required block")
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Can't find the required block: {exc}")
+            raise BlockNotFound
+        except Exception as exc:
+            logger.error(f"Can't find the required block: {exc}")
             raise BlockNotFound
 
         logger.info(f"Block hash: {block_hash}. Block number: {block_number}")
@@ -347,17 +431,33 @@ class Oracle:
 
     def _create_tx(self, era_id: int, staking_parameters: dict) -> dict:
         """Create a transaction body using the staking parameters, era id and parachain balance"""
-        nonce = self.service_params.w3.eth.get_transaction_count(self.service_params.account.address)
+        try:
+            nonce = self.service_params.w3.eth.get_transaction_count(self.service_params.account.address)
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to get the transaction count: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to get the transaction count: {exc}")
+            raise exc
 
-        return self.oracle_master_contract.functions.reportRelay(
-            era_id,
-            staking_parameters,
-        ).buildTransaction({
-            'from': self.service_params.account.address,
-            'gas': self.service_params.gas_limit,
-            'maxPriorityFeePerGas': self.service_params.max_priority_fee_per_gas,
-            'nonce': nonce,
-        })
+        try:
+            transaction = self.oracle_master_contract.functions.reportRelay(
+                era_id,
+                staking_parameters,
+            ).buildTransaction({
+                'from': self.service_params.account.address,
+                'gas': self.service_params.gas_limit,
+                'maxPriorityFeePerGas': self.service_params.max_priority_fee_per_gas,
+                'nonce': nonce,
+            })
+        except EXPECTED_NETWORK_EXCEPTIONS as exc:
+            logger.warning(f"Failed to build a transaction: {exc}")
+            raise exc
+        except Exception as exc:
+            logger.error(f"Failed to build a transaction: {exc}")
+            raise exc
+
+        return transaction
 
     def _sign_and_send_to_para(self, tx: dict, stash: Keypair, era_id: int) -> bool:
         """Sign transaction and send to parachain"""
@@ -369,24 +469,24 @@ class Oracle:
             msg = exc.args[0]["message"] if isinstance(exc.args[0], dict) else str(exc)
 
             self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
-            logger.warning(f"Report for '{stash.ss58_address}' era {era_id} probably will fail with {msg}")
+            logger.warning(f"The report for '{stash.ss58_address}' era {era_id} will probably fail with {msg}")
             metrics_exporter.last_failed_era.set(era_id)
             metrics_exporter.tx_revert.observe(1)
             return False
 
         tx_signed = self.service_params.w3.eth.account.sign_transaction(
-            tx,
+            transaction_dict=tx,
             private_key=self.service_params.account.privateKey,
         )
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
-        logger.info(f"Sending a transaction for stash {stash.ss58_address}")
+        logger.info(f"Sending a transaction for the stash {stash.ss58_address}")
         tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
         logger.info(f"Transaction hash: {tx_hash.hex()}")
         tx_receipt = self.service_params.w3.eth.wait_for_transaction_receipt(tx_hash)
 
         logger.debug(f"Transaction receipt: {tx_receipt}")
 
-        if tx_receipt.status == 1:
+        if tx_receipt.status == TX_SUCCESS:
             logger.info(f"The report for stash '{stash.ss58_address}' era {era_id} was sent successfully")
             metrics_exporter.tx_success.observe(1)
             metrics_exporter.time_elapsed_until_last_report.set(time.time())
@@ -394,7 +494,7 @@ class Oracle:
             self._wait_in_two_blocks(tx_receipt)
             return True
         else:
-            logger.warning(f"Transaction status for stash '{stash.ss58_address}' era {era_id} is reverted")
+            logger.warning(f"[era {era_id}] The transaction status for the stash {stash.ss58_address}: reverted")
             metrics_exporter.last_failed_era.set(era_id)
             metrics_exporter.tx_revert.observe(1)
             return False
