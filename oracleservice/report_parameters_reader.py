@@ -126,10 +126,7 @@ class ReportParametersReader:
         return account_info.value['data']['free']
 
     def _get_stake_status(self, stash: Keypair, block_hash: str) -> int:
-        """
-        Get stash account status.
-        0 - Idle, 1 - Nominator, 2 - Validator, 3 - None
-        """
+        """Get a status of a stash account. 0 - Idle, 1 - Nominator, 2 - Validator"""
         try:
             staking_nominators = self.service_params.substrate.query_map(
                 module='Staking',
