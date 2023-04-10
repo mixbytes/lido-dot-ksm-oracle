@@ -101,7 +101,7 @@ def create_provider(urls: list, timeout: int = 60, undesirable_urls: set or list
             try:
                 provider = Web3.WebsocketProvider(url)
                 w3 = Web3(provider)
-                if not w3.isConnected():
+                if not w3.is_connected():
                     raise ConnectionRefusedError
 
             except (
@@ -222,10 +222,9 @@ def check_abi(w3: Web3, contract_addr: ChecksumAddress, abi: list):
     try:
         if not hasattr(contract.functions, 'reportRelay'):
             raise ABIFunctionNotFound("The contract does not contain the 'reportRelay' function")
-
         contract.functions.reportRelay(0, {
-            'stashAccount': '',
-            'controllerAccount': '',
+            'stashAccount': bytearray(32),
+            'controllerAccount': bytearray(32),
             'stakeStatus': 0,
             'activeBalance': 0,
             'totalBalance': 0,
