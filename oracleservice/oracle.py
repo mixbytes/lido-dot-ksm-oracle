@@ -476,7 +476,7 @@ class Oracle:
 
         tx_signed = self.service_params.w3.eth.account.sign_transaction(
             transaction_dict=tx,
-            private_key=self.service_params.account.private_key,
+            private_key=self.service_params.account.key,
         )
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         logger.info(f"Sending a transaction for the stash {stash.ss58_address}")

@@ -3,7 +3,7 @@ import os
 import sys
 import utils
 
-from eth_account.account import Account
+from eth_account.account import LocalAccount
 from eth_typing import ChecksumAddress
 from pathlib import Path
 from substrateinterface import SubstrateInterface
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class ServiceParameters:
-    account: Account
+    account: LocalAccount
     contract_address: ChecksumAddress
     abi: list
     gas_limit: int
