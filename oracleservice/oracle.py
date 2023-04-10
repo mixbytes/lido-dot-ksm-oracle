@@ -444,7 +444,7 @@ class Oracle:
             transaction = self.oracle_master_contract.functions.reportRelay(
                 era_id,
                 staking_parameters,
-            ).buildTransaction({
+            ).build_transaction({
                 'from': self.service_params.account.address,
                 'gas': self.service_params.gas_limit,
                 'maxPriorityFeePerGas': self.service_params.max_priority_fee_per_gas,
@@ -476,11 +476,11 @@ class Oracle:
 
         tx_signed = self.service_params.w3.eth.account.sign_transaction(
             transaction_dict=tx,
-            private_key=self.service_params.account.privateKey,
+            private_key=self.service_params.account.private_key,
         )
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         logger.info(f"Sending a transaction for the stash {stash.ss58_address}")
-        tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
+        tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.raw_transaction)
         logger.info(f"Transaction hash: {tx_hash.hex()}")
         tx_receipt = self.service_params.w3.eth.wait_for_transaction_receipt(tx_hash)
 
