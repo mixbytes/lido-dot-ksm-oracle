@@ -3,7 +3,7 @@ import os
 import sys
 import utils
 
-from eth_account.account import Account
+from eth_account.account import LocalAccount
 from eth_typing import ChecksumAddress
 from pathlib import Path
 from substrateinterface import SubstrateInterface
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class ServiceParameters:
-    account: Account
+    account: LocalAccount
     contract_address: ChecksumAddress
     abi: list
     gas_limit: int
@@ -144,7 +144,7 @@ class ServiceParameters:
         logger.info("Checking the contract address")
         contract_address = os.getenv('CONTRACT_ADDRESS')
         assert contract_address, "The contract address is not provided"
-        self.contract_address = self.w3.toChecksumAddress(contract_address)
+        self.contract_address = self.w3.to_checksum_address(contract_address)
         utils.check_contract_address(self.w3, self.contract_address)
         logger.info("The contract address is checked")
 
