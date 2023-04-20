@@ -480,7 +480,7 @@ class Oracle:
         )
         self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
         logger.info(f"Sending a transaction for the stash {stash.ss58_address}")
-        tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.raw_transaction)
+        tx_hash = self.service_params.w3.eth.send_raw_transaction(tx_signed.rawTransaction)
         logger.info(f"Transaction hash: {tx_hash.hex()}")
         tx_receipt = self.service_params.w3.eth.wait_for_transaction_receipt(tx_hash)
 
