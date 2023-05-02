@@ -461,19 +461,19 @@ class Oracle:
 
     def _sign_and_send_to_para(self, tx: dict, stash: Keypair, era_id: int) -> bool:
         """Sign transaction and send to parachain"""
-        # try:
-        #     self.service_params.w3.eth.call(dict((k, v) for k, v in tx.items() if v))
+        try:
+            self.service_params.w3.eth.call(dict((k, v) for k, v in tx.items() if v))
 
-        #     del tx['from']
-        # except ValueError as exc:
-        #     msg = exc.args[0]["message"] if isinstance(exc.args[0], dict) else str(exc)
+            del tx['from']
+        except ValueError as exc:
+            # msg = exc.args[0]["message"] if isinstance(exc.args[0], dict) else str(exc)
 
-        #     self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
-        #     logger.warning(f"The report for '{stash.ss58_address}' era {era_id} will probably fail with {msg}")
-        #     metrics_exporter.last_failed_era.set(era_id)
-        #     metrics_exporter.tx_revert.observe(1)
-        #     return False
-        self.service_params.w3.eth.call(dict((k, v) for k, v in tx.items() if v))
+            # self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
+            # logger.warning(f"The report for '{stash.ss58_address}' era {era_id} will probably fail with {msg}")
+            # metrics_exporter.last_failed_era.set(era_id)
+            # metrics_exporter.tx_revert.observe(1)
+            # return False
+            pass
 
         tx_signed = self.service_params.w3.eth.account.sign_transaction(
             transaction_dict=tx,
