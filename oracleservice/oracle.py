@@ -466,14 +466,13 @@ class Oracle:
 
             del tx['from']
         except ValueError as exc:
-            # msg = exc.args[0]["message"] if isinstance(exc.args[0], dict) else str(exc)
+            msg = exc.args[0]["message"] if isinstance(exc.args[0], dict) else str(exc)
 
-            # self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
-            # logger.warning(f"The report for '{stash.ss58_address}' era {era_id} will probably fail with {msg}")
-            # metrics_exporter.last_failed_era.set(era_id)
-            # metrics_exporter.tx_revert.observe(1)
-            # return False
-            pass
+            self.failure_reqs_count[self.service_params.w3.provider.endpoint_uri] += 1
+            logger.warning(f"The report for '{stash.ss58_address}' era {era_id} will probably fail with {msg}")
+            metrics_exporter.last_failed_era.set(era_id)
+            metrics_exporter.tx_revert.observe(1)
+            return False
 
         tx_signed = self.service_params.w3.eth.account.sign_transaction(
             transaction_dict=tx,
