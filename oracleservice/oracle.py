@@ -449,7 +449,6 @@ class Oracle:
                 'gas': self.service_params.gas_limit,
                 'maxPriorityFeePerGas': self.service_params.max_priority_fee_per_gas,
                 'nonce': nonce,
-                'allowRevert': True
             })
         except EXPECTED_NETWORK_EXCEPTIONS as exc:
             logger.warning(f"Failed to build a transaction: {exc}")
