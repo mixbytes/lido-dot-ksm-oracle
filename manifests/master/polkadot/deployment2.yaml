@@ -49,6 +49,8 @@ spec:
             value: "./assets/oracle.json"
           - name: ERA_DELAY_TIME
             value: "1800"
+          - name: GAS_LIMIT
+            value: "1000000"
           - name: ORACLE_PRIVATE_KEY
             valueFrom:
               secretKeyRef:
