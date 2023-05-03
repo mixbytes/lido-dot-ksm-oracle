@@ -1,4 +1,4 @@
-FROM python:3.8-slim as builder
+FROM python:3.9-slim as builder
 
 # Build
 
@@ -11,7 +11,7 @@ COPY requirements.txt ./
 RUN pip install --user --trusted-host pypi.python.org -r requirements.txt
 COPY . /app
 
-FROM python:3.8-slim as app
+FROM python:3.9-slim as app
 
 COPY --from=builder /root/.local /root/.local
 
